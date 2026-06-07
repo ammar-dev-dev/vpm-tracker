@@ -1,0 +1,16 @@
+directories:
+  output: .
+  buildResources: build
+appId: com.vpm.tracker
+productName: VPM Tracker
+win:
+  target: nsis
+  artifactName: VPM-Tracker-Setup.exe
+publish:
+  provider: github
+  owner: ammar-dev-dev
+  repo: vpm-tracker
+extraMetadata:
+  main: electron.cjs
+files: []
+electronVersion: 42.3.3
