@@ -606,10 +606,6 @@ const LoginTypewriter = () => {
       <span style={{color:"#ffffff"}}>Track </span>
       <span style={{color:"#D90A2C"}}>{display}</span>
       <span style={{color:"#D90A2C",opacity:blink?1:0}}>|</span>
-      <br/>
-      <span style={{color:"#ffffff",fontWeight:800}}>using </span>
-      <span style={{color:"#ffffff",fontWeight:800}}>Fleet</span>
-      <span style={{color:"#f5a623",fontWeight:800}}>Track</span>
     </span>
   );
 };
