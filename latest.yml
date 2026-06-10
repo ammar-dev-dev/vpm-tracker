@@ -1,8 +1,8 @@
-version: 1.0.1
+version: 1.0.2
 files:
   - url: VPM-Tracker-Setup.exe
-    sha512: /kREdhzXYR6uWOpVEpNFeqd4clURjraFbj4xRHYpXMLHjT/fT8uyu0BHy8W1m8UB3YV/nXiiuqO9MUyRV66Beg==
-    size: 699504539
+    sha512: 3sz9OC8EUUwRQLl95Oe0NYPHgOst8L37VnXebaJIwr9b9AhTn54Yohif68OzSLKzqco8DCEYNazMPrOdnNdzRQ==
+    size: 1751258182
 path: VPM-Tracker-Setup.exe
-sha512: /kREdhzXYR6uWOpVEpNFeqd4clURjraFbj4xRHYpXMLHjT/fT8uyu0BHy8W1m8UB3YV/nXiiuqO9MUyRV66Beg==
-releaseDate: '2026-06-07T19:28:48.729Z'
+sha512: 3sz9OC8EUUwRQLl95Oe0NYPHgOst8L37VnXebaJIwr9b9AhTn54Yohif68OzSLKzqco8DCEYNazMPrOdnNdzRQ==
+releaseDate: '2026-06-09T22:32:41.868Z'

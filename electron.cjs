@@ -89,22 +89,39 @@ function createWindow(splash) {
 app.whenReady().then(() => {
   const splash = createSplash()
   createWindow(splash)
-  autoUpdater.checkForUpdates()
+  autoUpdater.autoDownload = false
+autoUpdater.checkForUpdates()
 })
 
 autoUpdater.on('update-available', (info) => {
   const { dialog } = require('electron')
   dialog.showMessageBox({
-    type: 'info',
+    type: 'question',
     title: 'Update Available',
-    message: `A new version (${info.version}) is available.`,
-    detail: 'The update will now download in the background. You will be notified when it is ready to install.',
-    buttons: ['OK'],
+    message: `Version ${info.version} is available`,
+    detail: 'Do you want to download and install the update now?',
+    buttons: ['Download Now', 'Later'],
+    defaultId: 0,
     icon: null
+  }).then(result => {
+    if (result.response === 0) {
+      autoUpdater.downloadUpdate()
+    }
   })
 })
 
+autoUpdater.on('download-progress', (progress) => {
+  if (mainWindow) {
+    mainWindow.setProgressBar(progress.percent / 100)
+    mainWindow.setTitle(`Downloading update... ${Math.round(progress.percent)}%`)
+  }
+})
+
 autoUpdater.on('update-downloaded', () => {
+  if (mainWindow) {
+    mainWindow.setProgressBar(-1)
+    mainWindow.setTitle('VPM Tracker')
+  }
   const { dialog } = require('electron')
   dialog.showMessageBox({
     type: 'question',

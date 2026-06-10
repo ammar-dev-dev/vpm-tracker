@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabase.js";
+import pkg from "../package.json";
+const APP_VERSION = pkg.version;
 
 const css = `
   *, *::before, *::after { box-sizing: border-box; }
@@ -150,7 +152,7 @@ const css = `
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 16px;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .modal-overlay { animation: fadeIn 0.2s ease both; }
@@ -389,7 +391,7 @@ const Field = ({label,required,children}) => (
   </div>
 );
 
-const inpBase = {width:"100%",padding:"9px 12px",borderRadius:8,fontSize:14,boxSizing:"border-box",fontFamily:"var(--font-body)"};
+const inpBase = {width:"100%",padding:"9px 12px 9px 14px",borderRadius:8,fontSize:14,boxSizing:"border-box",fontFamily:"var(--font-body)"};
 const Input = (props) => <input className="form-input" style={inpBase} {...props}/>;
 const Select = ({children, style={}, ...props}) => {
   const [open, setOpen] = useState(false);
@@ -900,9 +902,12 @@ const navItems = [
     {id:"repair",label:"Repair & Maintenance Register",icon:"wrench"},
     {id:"scrap",label:"Scrap Register",icon:"trash"},
     {id:"vendors",label:"Maintenance Vendors Info",icon:"users"},
+    {id:"scrapvendors",label:"Scrap Vendors Info",icon:"users"},
     {id:"scrapbill",label:"Scrap Bill",icon:"clipboard"},
+    {id:"reports",label:"Reports",icon:"chart"},
     {id:"vmf",label:"Vehicle Maintenance Form",icon:"truck"},
-    {id:"search",label:"Global Search",icon:"search"},
+    {id:"vmrf",label:"Maintenance Request Form",icon:"clipboard"},
+    {id:"search",label:"Search Engine",icon:"search"},
   ];
 
   const [pageKey, setPageKey] = useState(page);
@@ -925,11 +930,14 @@ const navItems = [
       case "movements": return <MovementsPage/>;
       case "vehicles": return <VehiclesPage/>;
       case "vendors": return <VendorsPage/>;
+      case "scrapvendors": return <ScrapVendorsPage/>;
       case "purchase": return <PurchasePage/>;
       case "repair": return <RepairPage/>;
       case "scrap": return <ScrapPage/>;
       case "scrapbill": return <ScrapBillPage/>;
+      case "reports": return <ReportsPage/>;
       case "vmf": return <VehicleMaintenanceForm/>;
+      case "vmrf": return <VehicleMaintenanceRequestForm/>;
       case "search": return <SearchPage initialQuery={globalSearch}/>;
       default: return <DashboardPage/>;
     }
@@ -989,7 +997,7 @@ const navItems = [
 
         {sidebarOpen && (
           <div style={{padding:"12px 14px",borderTop:"1px solid var(--border)"}}>
-            <div style={{fontSize:11,color:"var(--text-muted)"}}>Vehicle Parts Maintenance v1.0</div>
+            <div style={{fontSize:11,color:"var(--text-muted)"}}>Vehicle Parts Maintenance v{APP_VERSION}</div>
             <div style={{fontSize:11,color:"var(--text-muted)",marginTop:4}}>Designed & Developed by <span style={{color:"var(--accent)",fontWeight:700}}>Ammar Ansari</span></div>
           </div>
         )}
@@ -1140,18 +1148,246 @@ function TypewriterHero() {
   );
 }
 
+  function VehicleMaintenanceCostChart({ repair }) {
+  const [animated, setAnimated] = useState(false);
+  const [hoveredIndex, setHoveredIndex] = useState(null);
+  const [tooltip, setTooltip] = useState({visible:false, x:0, y:0, item:null});
+
+  useEffect(() => { const t = setTimeout(() => setAnimated(true), 300); return () => clearTimeout(t); }, []);
+
+  const vehicleCosts = useMemo(() => {
+    const map = {};
+    repair.forEach(r => {
+      const v = r.vehicleNo || "Unknown";
+      map[v] = (map[v] || 0) + (Number(r.repairCost) || 0);
+    });
+    return Object.entries(map)
+      .map(([vehicle, cost]) => ({ vehicle, cost }))
+      .sort((a, b) => b.cost - a.cost)
+      .slice(0, 12);
+  }, [repair]);
+
+  if (vehicleCosts.length === 0) return null;
+
+  const maxCost = Math.max(...vehicleCosts.map(x => x.cost));
+  const totalCost = vehicleCosts.reduce((s, x) => s + x.cost, 0);
+  const COLORS = ["#f5a623","#4f8ef7","#34d399","#a78bfa","#22d3ee","#f87171","#fb923c","#e879f9","#86efac","#67e8f9","#fbbf24","#c084fc"];
+  const formatPKR = v => v >= 1000000 ? `${(v/1000000).toFixed(2)}M` : v >= 1000 ? `${(v/1000).toFixed(1)}K` : v.toString();
+
+  const chartH = 100;
+  const chartW = 700;
+  const padL = 10, padR = 10, padT = 16, padB = 6;
+  const barW = Math.min(36, (chartW - padL - padR) / vehicleCosts.length - 8);
+  const gap = (chartW - padL - padR - barW * vehicleCosts.length) / (vehicleCosts.length + 1);
+
+  const yLines = [0, 0.25, 0.5, 0.75, 1];
+
+  return (
+    <div style={{
+      background:"var(--bg-card)", border:"1px solid var(--border)",
+      borderRadius:20, padding:"24px 28px", marginBottom:24,
+      boxShadow:"0 8px 40px rgba(0,0,0,0.3)",
+      position:"relative", overflow:"hidden",
+    }}>
+      {/* Ambient glows */}
+      <div style={{position:"absolute",top:-80,right:-80,width:400,height:400,borderRadius:"50%",background:"radial-gradient(circle, rgba(245,166,35,0.07) 0%, transparent 65%)",pointerEvents:"none"}}/>
+      <div style={{position:"absolute",bottom:-60,left:-60,width:300,height:300,borderRadius:"50%",background:"radial-gradient(circle, rgba(79,142,247,0.06) 0%, transparent 65%)",pointerEvents:"none"}}/>
+
+      {/* Header */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+        <div>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:"0.12em",marginBottom:5}}>Fleet Analytics</div>
+          <div style={{fontSize:16,fontWeight:900,color:"var(--text-primary)",fontFamily:"var(--font-display)",letterSpacing:"-0.3px"}}>Vehicle Maintenance Cost</div>
+          <div style={{fontSize:12,color:"var(--text-muted)",marginTop:3}}>Total fleet spend: <span style={{color:"var(--accent)",fontWeight:700}}>PKR {totalCost.toLocaleString()}</span></div>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <div style={{fontSize:11,color:"var(--text-muted)",background:"var(--bg-elevated)",border:"1px solid var(--border)",borderRadius:8,padding:"6px 14px",fontWeight:600}}>
+            Top {vehicleCosts.length} Vehicles
+          </div>
+        </div>
+      </div>
+
+      {/* Chart */}
+      <div style={{position:"relative",width:"100%",overflowX:"hidden"}}>
+        <svg width="100%" viewBox={`0 0 ${chartW} ${chartH + padT + padB + 40}`} style={{overflow:"visible",display:"block"}}>
+          <defs>
+            {COLORS.map((c,i) => (
+              <linearGradient key={i} id={`bar-grad-${i}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={c} stopOpacity="1"/>
+                <stop offset="100%" stopColor={c} stopOpacity="0.4"/>
+              </linearGradient>
+            ))}
+            <filter id="bar-glow">
+              <feGaussianBlur stdDeviation="3" result="blur"/>
+              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+
+          {/* Y grid lines */}
+          {yLines.map((pct, i) => {
+            const y = padT + (1 - pct) * chartH;
+            return (
+              <g key={i}>
+                <line x1={padL} y1={y} x2={chartW - padR} y2={y}
+                  stroke="rgba(255,255,255,0.05)" strokeWidth={i===0?1.5:1} strokeDasharray={i===0?"none":"4,4"}/>
+                {i > 0 && (
+                  <text x={padL - 4} y={y + 4} textAnchor="end" fontSize="9" fill="rgba(255,255,255,0.25)" fontWeight="600">
+                    {formatPKR(maxCost * pct)}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+
+          {/* Bars */}
+          {vehicleCosts.map((item, i) => {
+            const color = COLORS[i % COLORS.length];
+            const pct = maxCost > 0 ? item.cost / maxCost : 0;
+            const barH = animated ? pct * chartH : 0;
+            const x = padL + gap + i * (barW + gap);
+            const y = padT + chartH - barH;
+            const isHovered = hoveredIndex === i;
+
+            return (
+              <g key={item.vehicle}
+                onMouseEnter={(e) => {
+                  setHoveredIndex(i);
+                  const rect = e.currentTarget.closest('svg').getBoundingClientRect();
+                  setTooltip({visible:true, x: x + barW/2, y: y - 10, item, color, pct});
+                }}
+                onMouseLeave={() => { setHoveredIndex(null); setTooltip({visible:false}); }}
+                style={{cursor:"pointer"}}>
+
+                {/* Hover highlight column */}
+                <rect x={x - 6} y={padT} width={barW + 12} height={chartH}
+                  fill={isHovered ? "rgba(255,255,255,0.03)" : "transparent"}
+                  rx={8}
+                  style={{transition:"fill 0.15s"}}/>
+
+                {/* Bar shadow/glow */}
+                {isHovered && (
+                  <rect x={x + 2} y={y + 4} width={barW} height={barH}
+                    fill={color} opacity={0.2} rx={6}
+                    style={{filter:"blur(8px)"}}/>
+                )}
+
+                {/* Main bar */}
+                <rect
+                  x={x} y={y} width={barW}
+                  height={animated ? barH : 0}
+                  fill={`url(#bar-grad-${i % COLORS.length})`}
+                  rx={6}
+                  stroke={isHovered ? color : "transparent"}
+                  strokeWidth={isHovered ? 1.5 : 0}
+                  style={{
+                    transition:`height 0.9s cubic-bezier(0.22,1,0.36,1) ${i*0.06}s, y 0.9s cubic-bezier(0.22,1,0.36,1) ${i*0.06}s, filter 0.2s`,
+                    filter: isHovered ? `drop-shadow(0 0 8px ${color}88)` : "none",
+                    transformOrigin:`${x + barW/2}px ${padT + chartH}px`,
+                    transform: isHovered ? "scaleX(1.06)" : "scaleX(1)",
+                  }}
+                />
+
+                {/* Top cap shine */}
+                {animated && barH > 10 && (
+                  <rect x={x + 2} y={y} width={barW - 4} height={4}
+                    fill="rgba(255,255,255,0.25)" rx={3}
+                    style={{transition:`opacity 0.3s ease ${i*0.06 + 0.5}s`, opacity: animated ? 1 : 0}}/>
+                )}
+
+                {/* Cost label above bar */}
+                {animated && (
+                  <text
+                    x={x + barW / 2} y={y - 6}
+                    textAnchor="middle" fontSize="10" fontWeight="800"
+                    fill={isHovered ? color : "rgba(255,255,255,0.55)"}
+                    style={{transition:"fill 0.15s, opacity 0.4s ease "+((i*0.06+0.7)+"s"), opacity: animated ? 1 : 0}}>
+                    {formatPKR(item.cost)}
+                  </text>
+                )}
+
+                {/* Vehicle label below */}
+                <text
+                  x={x + barW / 2} y={padT + chartH + 16}
+                  textAnchor="middle" fontSize="10" fontWeight="700"
+                  fill={isHovered ? color : "rgba(255,255,255,0.45)"}
+                  style={{transition:"fill 0.15s"}}>
+                  {item.vehicle.length > 7 ? item.vehicle.slice(0,7)+"…" : item.vehicle}
+                </text>
+
+                {/* % share below vehicle label */}
+                <text
+                  x={x + barW / 2} y={padT + chartH + 30}
+                  textAnchor="middle" fontSize="9" fontWeight="600"
+                  fill={isHovered ? color : "rgba(255,255,255,0.22)"}
+                  style={{transition:"fill 0.15s"}}>
+                  {totalCost > 0 ? ((item.cost/totalCost)*100).toFixed(1)+"%" : ""}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* Base line */}
+          <line x1={padL} y1={padT + chartH} x2={chartW - padR} y2={padT + chartH}
+            stroke="rgba(255,255,255,0.12)" strokeWidth={1.5}/>
+        </svg>
+
+        {/* SVG Tooltip */}
+        {tooltip.visible && tooltip.item && (
+          <div style={{
+            position:"absolute",
+            left: `calc(${(tooltip.x / chartW) * 100}% - 80px)`,
+            top: Math.max(0, (tooltip.y / (chartH + padT + padB + 40)) * 100) + "%",
+            transform:"translateY(-110%)",
+            pointerEvents:"none",
+            background:"var(--bg-elevated)",
+            border:`1px solid ${tooltip.color}55`,
+            borderRadius:12,
+            padding:"10px 14px",
+            boxShadow:`0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px ${tooltip.color}22`,
+            zIndex:100,
+            minWidth:160,
+            animation:"fadeUp 0.15s ease both",
+          }}>
+            <div style={{fontSize:12,fontWeight:800,color:tooltip.color,marginBottom:4}}>{tooltip.item.vehicle}</div>
+            <div style={{fontSize:13,fontWeight:900,color:"var(--text-primary)"}}>PKR {tooltip.item.cost.toLocaleString()}</div>
+            <div style={{fontSize:11,color:"var(--text-muted)",marginTop:2}}>
+              {totalCost > 0 ? ((tooltip.item.cost/totalCost)*100).toFixed(1) : 0}% of total fleet cost
+            </div>
+            <div style={{marginTop:8,height:3,borderRadius:2,background:`linear-gradient(90deg, ${tooltip.color}, ${tooltip.color}44)`,width:`${tooltip.pct*100}%`}}/>
+          </div>
+        )}
+      </div>
+
+      {/* Footer legend dots */}
+      <div style={{display:"flex",flexWrap:"wrap",gap:"4px 12px",marginTop:12,paddingTop:10,borderTop:"1px solid var(--border)"}}>
+        {vehicleCosts.map((item,i) => (
+          <div key={item.vehicle}
+            onMouseEnter={()=>setHoveredIndex(i)}
+            onMouseLeave={()=>setHoveredIndex(null)}
+            style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",opacity:hoveredIndex===null||hoveredIndex===i?1:0.4,transition:"opacity 0.2s"}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:COLORS[i%COLORS.length],boxShadow:`0 0 6px ${COLORS[i%COLORS.length]}88`}}/>
+            <span style={{fontSize:11,color:hoveredIndex===i?COLORS[i%COLORS.length]:"var(--text-muted)",fontWeight:hoveredIndex===i?700:500,transition:"color 0.15s"}}>{item.vehicle}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DashboardPage() {
   const [movements,setMovements]=useState([]);
   const [issued,setIssued]=useState([]);
   const [vehicles,setVehicles]=useState([]);
   const [repair,setRepair]=useState([]);
   const [purchase,setPurchase]=useState([]);
+  const [scrap,setScrap]=useState([]);
   useEffect(()=>{
     load('movements').then(setMovements);
     load('issued').then(setIssued);
     load('vehicles').then(setVehicles);
     load('repair').then(setRepair);
     load('purchase').then(setPurchase);
+    load('scrap').then(setScrap);
   },[]);
 
   const stats = {
@@ -1161,6 +1397,8 @@ function DashboardPage() {
     returned: movements.filter(m=>m.finalStatus==="Returned"||m.finalStatus==="Received after repair"||m.finalStatus==="Received without repair").length,
     totalRepairCost: repair.reduce((s,r)=>s+(Number(r.repairCost)||0),0),
     totalPurchaseSpend: purchase.reduce((s,r)=>s+(Number(r.purchaseAmount)||0),0),
+    totalScrapCost: scrap.reduce((s,r)=>s+(Number(r.scrapCost)||0),0),
+    totalScrapRevenue: scrap.reduce((s,r)=>s+(Number(r.unitPrice)||0)*(Number(r.quantity)||0),0),
   };
 
   const OVERDUE_DAYS = 7;
@@ -1179,6 +1417,10 @@ function DashboardPage() {
     return (Date.now()-new Date(r.issueDate).getTime())/(1000*86400)>=OVERDUE_DAYS;
   });
 
+  const repairParts = repair.filter(r=>!r.deleted);
+  const repairReceived = repairParts.filter(r=>r.partStatus==="Received after repair"||r.partStatus==="Received without repair");
+  const repairNotReceived = repairParts.filter(r=>r.partStatus!=="Received after repair"&&r.partStatus!=="Received without repair");
+
   const recent = [...movements].sort((a,b)=>b.issuedDate>a.issuedDate?1:-1).slice(0,8);
 const statCards = [
     {label:"Parts Issued",value:stats.totalIssued,icon:"clipboard",color:"#a78bfa"},
@@ -1186,25 +1428,29 @@ const statCards = [
     {label:"Under Repair",value:stats.underRepair,icon:"wrench",color:"#fb923c"},
     {label:"Parts Returned",value:stats.returned,icon:"check",color:"#4f8ef7"},
     {label:"Total Repair Cost",value:`PKR ${stats.totalRepairCost.toLocaleString()}`,icon:"chart",color:"#f87171"},
-  ];
+    ];
 
   const statCards2 = [
-    {label:"Total money spent on purchasing parts",value:`PKR ${stats.totalPurchaseSpend.toLocaleString()}`,icon:"download",color:"#22d3ee"},
+    {label:"Total Purchase Spend on Parts",value:`PKR ${stats.totalPurchaseSpend.toLocaleString()}`,icon:"download",color:"#22d3ee"},
+    {label:"Total Scrap Revenue",value:`PKR ${stats.totalScrapRevenue.toLocaleString()}`,icon:"bolt",color:"#34d399"},
+    {label:"Total Vehicles",value:vehicles.length,icon:"truck",color:"#a78bfa"},
   ];
 
   return (
     <div>
       <TypewriterHero />
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginBottom:14}}>
+      <div style={{display:"flex",flexWrap:"wrap",gap:14,marginBottom:14}}>
         {statCards.map((s,i)=>(
-          <StatCard key={s.label+s.value} {...s} style={{animationDelay:`${i*0.06}s`,minHeight:140}}/>
+          <StatCard key={s.label+s.value} {...s} style={{animationDelay:`${i*0.06}s`,minHeight:140,width:"calc(20% - 12px)",flexShrink:0,flexGrow:0}}/>
         ))}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:14,marginBottom:28}}>
+      <div style={{display:"flex",flexWrap:"wrap",gap:14,marginBottom:28}}>
         {statCards2.map((s,i)=>(
-          <StatCard key={s.label} {...s} style={{animationDelay:`${(i+5)*0.06}s`,minHeight:140}}/>
+          <StatCard key={s.label} {...s} style={{animationDelay:`${(i+5)*0.06}s`,minHeight:140,width:"calc(20% - 12px)",flexShrink:0,flexGrow:0}}/>
         ))}
       </div>
+
+      <VehicleMaintenanceCostChart repair={repair}/>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
         {/* Recent activity */}
@@ -1239,93 +1485,75 @@ const statCards = [
               <Icon name="alert" size={14}/>
             </div>
             <h2 style={{margin:0,fontSize:14,fontWeight:700,color:"var(--text-primary)",fontFamily:"var(--font-display)",flex:1}}>
-              Overdue Parts & Repairs
+              Part Repairs Duration
             </h2>
-            {(overdue.length+overdueIssued.length)>0&&(
+           {repairNotReceived.length>0&&(
               <span style={{background:"var(--red-dim)",color:"var(--red)",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700,border:"1px solid rgba(248,113,113,0.3)"}}>
-                {overdue.length+overdueIssued.length} flagged
+                {repairNotReceived.length} not received
+              </span>
+            )}
+            {repairNotReceived.length===0&&repairParts.length>0&&(
+              <span style={{background:"rgba(52,211,153,0.12)",color:"var(--green)",borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700,border:"1px solid rgba(52,211,153,0.3)"}}>
+                All received
               </span>
             )}
           </div>
 
-
           <div style={{maxHeight:360,overflowY:"auto"}} className="scrollbar-dark">
-            {(overdue.length+overdueIssued.length)===0&&(
-              <div style={{padding:24,fontSize:13,color:"var(--green)",display:"flex",alignItems:"center",gap:8}}>
-                <Icon name="check" size={16}/> All parts accounted for. No overdue items.
+            {repairParts.length===0&&(
+              <div style={{padding:24,fontSize:13,color:"var(--text-muted)",display:"flex",alignItems:"center",gap:8}}>
+                <Icon name="package" size={16}/> No repair parts recorded yet.
               </div>
             )}
 
-            {/* Maintenance overdue */}
-            {overdue.map(m=>{
-              const checkDate = m.dateOut||m.issueDate;
-              const days = Math.floor((Date.now()-new Date(checkDate).getTime())/(1000*86400));
-              const isCritical = days>=14;
+            {repairParts.map(r=>{
+              const isReceived = r.partStatus==="Received after repair"||r.partStatus==="Received without repair";
               return (
-                <div key={m.id} style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,0.03)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}
+                <div key={r.id||r.ogpNo} style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,0.03)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}
                   onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"}
                   onMouseLeave={e=>e.currentTarget.style.background=""}>
                   <div style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
-                    <div style={{width:32,height:32,borderRadius:8,flexShrink:0,background:isCritical?"rgba(248,113,113,0.12)":"rgba(251,146,60,0.1)",border:`1px solid ${isCritical?"rgba(248,113,113,0.3)":"rgba(251,146,60,0.25)"}`,display:"flex",alignItems:"center",justifyContent:"center",color:isCritical?"var(--red)":"#fb923c"}}>
+                    <div style={{width:32,height:32,borderRadius:8,flexShrink:0,background:isReceived?"rgba(52,211,153,0.1)":"rgba(248,113,113,0.12)",border:`1px solid ${isReceived?"rgba(52,211,153,0.25)":"rgba(248,113,113,0.3)"}`,display:"flex",alignItems:"center",justifyContent:"center",color:isReceived?"var(--green)":"var(--red)"}}>
                       <Icon name="wrench" size={14}/>
                     </div>
                     <div style={{minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:600,color:"var(--text-primary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.partName||m.itemName||"—"}</div>
+                      <div style={{fontSize:13,fontWeight:600,color:"var(--text-primary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.partName||"—"}</div>
                       <div style={{fontSize:11,color:"var(--text-muted)",marginTop:2,display:"flex",gap:6,alignItems:"center"}}>
-                        <span style={{color:"var(--accent)",fontWeight:600}}>{m.vehicleNumber||"—"}</span>
-                        <span>·</span>
-                        <span>{m.finalStatus||m.status||"—"}</span>
-                        {m.vendorName&&<><span>·</span><span>{m.vendorName}</span></>}
+                        <span style={{color:"var(--accent)",fontWeight:600}}>{r.vehicleNo||"—"}</span>
+                        {r.repairVendorName&&<><span>·</span><span>{r.repairVendorName}</span></>}
+                        {r.partId&&<><span>·</span><span style={{color:"var(--cyan)"}}>{r.partId}</span></>}
+                        {r.ogpNo&&<><span>·</span><span>{r.ogpNo}</span></>}
+                      </div>
+                      <div style={{fontSize:11,color:"var(--text-muted)",marginTop:3,display:"flex",gap:10,alignItems:"center"}}>
+                        {r.dateSent&&<span>Sent: <span style={{color:"var(--text-secondary)"}}>{r.dateSent}</span></span>}
+                        {r.dateSent&&r.dateReceived&&<span>·</span>}
+                        {r.dateReceived&&<span>Received: <span style={{color:"var(--green)"}}>{r.dateReceived}</span></span>}
+                        {!isReceived&&!r.dateReceived&&<span style={{color:"var(--red)"}}>Not yet received</span>}
+                        {isReceived&&!r.dateReceived&&<span style={{color:"var(--text-muted)",fontStyle:"italic"}}>Date not entered</span>}
+                        {r.dateSent&&r.dateReceived&&(()=>{
+                          const parseDate=s=>{const months={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};const p=s.trim().split(/[-\/\s]+/);if(p.length<3)return null;const d=parseInt(p[0]),m=isNaN(parseInt(p[1]))?months[p[1].toLowerCase().slice(0,3)]:parseInt(p[1])-1,y=parseInt(p[2])<100?2000+parseInt(p[2]):parseInt(p[2]);return new Date(y,m,d);};
+                          const d1=parseDate(r.dateSent),d2=parseDate(r.dateReceived);
+                          if(!d1||!d2)return null;
+                          const days=Math.round((d2-d1)/(1000*86400));
+                          return days>=0?<><span>·</span><span style={{color:"var(--text-muted)"}}>Duration: <span style={{color:"var(--accent)",fontWeight:600}}>{days} days</span></span></>:null;
+                        })()}
                       </div>
                     </div>
                   </div>
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,flexShrink:0}}>
-                    <span style={{background:isCritical?"rgba(248,113,113,0.15)":"rgba(251,146,60,0.12)",color:isCritical?"var(--red)":"#fb923c",border:`1px solid ${isCritical?"rgba(248,113,113,0.35)":"rgba(251,146,60,0.3)"}`,borderRadius:6,padding:"3px 9px",fontSize:11.5,fontWeight:700,whiteSpace:"nowrap"}}>
-                      {days}d overdue
+                  <div style={{flexShrink:0}}>
+                    <span style={{background:isReceived?"rgba(52,211,153,0.15)":"rgba(248,113,113,0.15)",color:isReceived?"var(--green)":"var(--red)",border:`1px solid ${isReceived?"rgba(52,211,153,0.35)":"rgba(248,113,113,0.35)"}`,borderRadius:6,padding:"3px 9px",fontSize:11.5,fontWeight:700,whiteSpace:"nowrap"}}>
+                      {isReceived?"Received":"Not Received"}
                     </span>
-                    <span style={{fontSize:10,color:"var(--text-muted)"}}>Maintenance</span>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Issued but not returned overdue */}
-            {overdueIssued.map(r=>{
-              const days = Math.floor((Date.now()-new Date(r.issueDate).getTime())/(1000*86400));
-              const isCritical = days>=14;
-              return (
-                <div key={r.id} style={{padding:"12px 18px",borderBottom:"1px solid rgba(255,255,255,0.03)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}
-                  onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"}
-                  onMouseLeave={e=>e.currentTarget.style.background=""}>
-                  <div style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
-                    <div style={{width:32,height:32,borderRadius:8,flexShrink:0,background:isCritical?"rgba(248,113,113,0.12)":"rgba(167,139,250,0.1)",border:`1px solid ${isCritical?"rgba(248,113,113,0.3)":"rgba(167,139,250,0.25)"}`,display:"flex",alignItems:"center",justifyContent:"center",color:isCritical?"var(--red)":"var(--purple)"}}>
-                      <Icon name="package" size={14}/>
-                    </div>
-                    <div style={{minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:600,color:"var(--text-primary)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.itemName||"—"}</div>
-                      <div style={{fontSize:11,color:"var(--text-muted)",marginTop:2,display:"flex",gap:6,alignItems:"center"}}>
-                        <span style={{color:"var(--accent)",fontWeight:600}}>{r.vehicleNumber||"—"}</span>
-                        <span>·</span>
-                        <span>Issued to {r.issuedTo||"—"}</span>
-                        {r.itemCode&&<><span>·</span><code style={{fontSize:10,color:"var(--cyan)"}}>{r.itemCode}</code></>}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,flexShrink:0}}>
-                    <span style={{background:isCritical?"rgba(248,113,113,0.15)":"rgba(167,139,250,0.12)",color:isCritical?"var(--red)":"var(--purple)",border:`1px solid ${isCritical?"rgba(248,113,113,0.35)":"rgba(167,139,250,0.3)"}`,borderRadius:6,padding:"3px 9px",fontSize:11.5,fontWeight:700,whiteSpace:"nowrap"}}>
-                      {days}d overdue
-                    </span>
-                    <span style={{fontSize:10,color:"var(--text-muted)"}}>Not returned</span>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {(overdue.length+overdueIssued.length)>0&&(
+          {repairParts.length>0&&(
             <div style={{padding:"8px 18px",borderTop:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:11,color:"var(--text-muted)"}}>{overdue.length} repair · {overdueIssued.length} not returned</span>
-              <span style={{fontSize:11,color:"var(--text-muted)"}}>Threshold: {OVERDUE_DAYS} days</span>
+              <span style={{fontSize:11,color:"var(--text-muted)"}}>{repairReceived.length} received · {repairNotReceived.length} not received</span>
+              <span style={{fontSize:11,color:"var(--text-muted)"}}>Total: {repairParts.length} parts</span>
             </div>
           )}
         </div>
@@ -1414,7 +1642,7 @@ const save_ = async (data)=>{
             className="search-input" style={{width:"100%",maxWidth:380,padding:"8px 12px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
         </div>
         {records.length===0&&<Skeleton/>}
-        <div style={{overflowX:"auto",display:records.length===0?"none":"block"}} className="scrollbar-dark">
+        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:records.length===0?"none":"block"}} className="scrollbar-dark">
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead><tr><Th>S.No</Th>{cols.map(c=><Th key={c.key} onClick={["issueDate"].includes(c.key)?()=>sortBy(c.key):undefined} sorted={sort.col===c.key?sort.dir:null}>{c.label}</Th>)}<Th>Actions</Th></tr></thead>
             <tbody>
@@ -1472,7 +1700,7 @@ function IssuedModal({mode,data,vehicles,onSave,onClose}) {
           </Field>
           <Field label="Odometer Reading (Kms)"><Input value={form.odometerReading||""} onChange={e=>set("odometerReading",e.target.value)} placeholder="e.g. 45000"/></Field>
           <Field label="Driver Name"><Input value={form.driverName||""} onChange={e=>set("driverName",e.target.value)} placeholder="Driver name"/></Field>
-          <Field label="Issue Date" required><Input type="text" value={form.issueDate} onChange={e=>set("issueDate",e.target.value)} placeholder="e.g. 1-Dec-26" required/></Field>
+          <Field label="Issue Date" required><DatePickerField value={form.issueDate||""} onChange={v=>set("issueDate",v)}/></Field>
           <Field label="GP Number"><Input value={form.gpNumber} onChange={e=>set("gpNumber",e.target.value)}/></Field>
           <Field label="Issued By"><Input value={form.issuedBy} onChange={e=>set("issuedBy",e.target.value)}/></Field>
           <Field label="Issued To"><Input value={form.issuedTo} onChange={e=>set("issuedTo",e.target.value)}/></Field>
@@ -1618,9 +1846,9 @@ function MovementsPage() {
             className="search-input" style={{width:"100%",maxWidth:400,padding:"8px 12px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
         </div>
         {records.length===0&&<Skeleton/>}
-        <div style={{overflowX:"auto",display:records.length===0?"none":"block"}} className="scrollbar-dark">
+        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:records.length===0?"none":"block"}} className="scrollbar-dark">
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead><tr>{cols.map(c=><Th key={c.key} onClick={["issueDate","returnedDate"].includes(c.key)?()=>sortBy(c.key):undefined} sorted={sort.col===c.key?sort.dir:null}>{c.label}</Th>)}<Th>Actions</Th></tr></thead>
+            <thead><tr><Th>S.No</Th>{cols.map(c=><Th key={c.key} onClick={["issueDate","returnedDate"].includes(c.key)?()=>sortBy(c.key):undefined} sorted={sort.col===c.key?sort.dir:null}>{c.label}</Th>)}<Th>Actions</Th></tr></thead>
             <tbody>
               {filtered.length===0&&<tr><td colSpan={cols.length+1} style={{padding:32,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No records found.</td></tr>}
               {filtered.map((r,i)=>(
@@ -1688,8 +1916,7 @@ function MovementModal({mode,data,vehicles,vendors,onSave,onClose}) {
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"0 14px"}}>
           <SectionHead title="Part & Vehicle Info"/>
           <Field label="Vehicle Group"><Input value={form.vehicleGroup||""} onChange={e=>set("vehicleGroup",e.target.value)} placeholder="e.g. Mini Tippers"/></Field>
-<Field label="Vehicle No" required><Input value={form.vehicleNumber||""} onChange={e=>set("vehicleNumber",e.target.value)} placeholder="e.g. TRK-001" required/></Field><Field label="Vehicle Group"><Input value={form.vehicleGroup||""} onChange={e=>set("vehicleGroup",e.target.value)} placeholder="e.g. Mini Tippers"/></Field>
-<Field label="Vehicle No" required><Input value={form.vehicleNumber||""} onChange={e=>set("vehicleNumber",e.target.value)} placeholder="e.g. TRK-001" required/></Field>
+          <Field label="Vehicle No" required><Input value={form.vehicleNumber||""} onChange={e=>set("vehicleNumber",e.target.value)} placeholder="e.g. TRK-001" required/></Field>
           <Field label="Part Name" required><Input value={form.partName||""} onChange={e=>set("partName",e.target.value)} required/></Field>
           <Field label="Part ID" required><Input value={form.partId||""} onChange={e=>set("partId",e.target.value)} required/></Field>
 <Field label="Code"><Input value={form.code||""} onChange={e=>set("code",e.target.value)} placeholder="e.g. ENG-001"/></Field>
@@ -1697,33 +1924,29 @@ function MovementModal({mode,data,vehicles,vendors,onSave,onClose}) {
           <SectionHead title="Issue Details"/>
           <Field label="Qty"><Input type="number" min="1" value={form.qty||1} onChange={e=>set("qty",e.target.value)}/></Field>
 <Field label="Serial No"><Input value={form.serialNo||""} onChange={e=>set("serialNo",e.target.value)} placeholder="e.g. SN-001"/></Field>
-<Field label="Serial No"><Input value={form.serialNo||""} onChange={e=>set("serialNo",e.target.value)} placeholder="e.g. SN-001"/></Field>
 <Field label="Issue Count"><Input type="number" min="1" value={form.issueCount||""} onChange={e=>set("issueCount",e.target.value)} placeholder="e.g. 1"/></Field>
-          <Field label="Issue Date"><Input type="text" value={form.issueDate||""} onChange={e=>set("issueDate",e.target.value)} placeholder="e.g. 1-Dec-26"/></Field>
+          <Field label="Issue Date"><DatePickerField value={form.issueDate||""} onChange={v=>set("issueDate",v)}/></Field>
           <Field label="Issued Condition"><Select value={form.issuedCondition||""} onChange={e=>set("issuedCondition",e.target.value)}><option value="">Select...</option><option value="New">New</option><option value="Repaired">Repaired</option></Select></Field>
 
           <SectionHead title="Return & Action"/>
-          <Field label="Returned Date"><Input type="text" value={form.returnedDate||""} onChange={e=>set("returnedDate",e.target.value)} placeholder="e.g. 1-Dec-26"/></Field>
+          <Field label="Returned Date"><DatePickerField value={form.returnedDate||""} onChange={v=>set("returnedDate",v)}/></Field>
 <Field label="Driver Name"><Input value={form.driverName||""} onChange={e=>set("driverName",e.target.value)} placeholder="Driver name"/></Field>
 <Field label="Mechanic Name"><Input value={form.mechanicName||""} onChange={e=>set("mechanicName",e.target.value)} placeholder="Mechanic name"/></Field>
           <Field label="Returned Condition"><Select value={form.returnedCondition||""} onChange={e=>set("returnedCondition",e.target.value)}><option value="">Select...</option>{RETURNED_CONDITIONS.map(s=><option key={s} value={s}>{s}</option>)}</Select></Field>
 <Field label="Request Ref #"><Input value={form.requestRefNo||""} onChange={e=>set("requestRefNo",e.target.value)} placeholder="e.g. REQ-001"/></Field>
 <Field label="Returning Part Odometer (Kms)"><Input value={form.returningPartOdometer||""} onChange={e=>set("returningPartOdometer",e.target.value)} placeholder="e.g. 45000"/></Field>
 <Field label="Action Taken"><Select value={form.actionTaken||""} onChange={e=>set("actionTaken",e.target.value)}><option value="">Select...</option>{ACTIONS_TAKEN.map(s=><option key={s} value={s}>{s}</option>)}</Select></Field>
-<Field label="Action Taken"><Select value={form.actionTaken||""} onChange={e=>set("actionTaken",e.target.value)}><option value="">Select...</option>{ACTIONS_TAKEN.map(s=><option key={s} value={s}>{s}</option>)}</Select></Field>
 <Field label="Location"><Select value={form.location||""} onChange={e=>set("location",e.target.value)}><option value="">Select...</option><option value="At Store">At Store</option><option value="At Workshop">At Workshop</option><option value="At Yard">At Yard</option><option value="At Scrap Room">At Scrap Room</option><option value="At Vendor Premises">At Vendor Premises</option><option value="Outside">Outside</option></Select></Field>
 <Field label="Warranty Status"><Select value={form.warrantyStatus||""} onChange={e=>set("warrantyStatus",e.target.value)}><option value="">Select...</option><option value="Under Warranty">Under Warranty</option><option value="No Warranty">No Warranty</option><option value="Claim Item">Claim Item</option><option value="Replaced Item">Replaced Item</option><option value="Adjust from bill">Adjust from bill</option><option value="Discount from bill">Discount from bill</option></Select></Field>
 <Field label="Reissued Qty">  <Input type="number" min="0" value={form.reissuedQty||""} onChange={e=>set("reissuedQty",e.target.value)} placeholder="e.g. 1"/></Field>
 <Field label="Re-Issued Condition"><Select value={form.reissuedCondition||""} onChange={e=>set("reissuedCondition",e.target.value)}><option value="">Select...</option><option value="New">New</option><option value="Repaired">Repaired</option><option value="Used">Used</option></Select></Field>
-<Field label="Mechanic Name"><Input value={form.mechanicName||""} onChange={e=>set("mechanicName",e.target.value)} placeholder="Mechanic name"/></Field>
-<Field label="Driver Name"><Input value={form.driverName||""} onChange={e=>set("driverName",e.target.value)} placeholder="Driver name"/></Field>
-          <SectionHead title="Re-Issue Part to Vehicle"/>
-          <Field label="Vendor Repair Date"><Input type="text" value={form.vendorRepairDate||""} onChange={e=>set("vendorRepairDate",e.target.value)} placeholder="e.g. 1-Dec-26"/></Field>
-          <Field label="Received Back Date"><Input type="text" value={form.receivedBackDate||""} onChange={e=>set("receivedBackDate",e.target.value)} placeholder="e.g. 1-Dec-26"/></Field>
+<SectionHead title="Re-Issue Part to Vehicle"/>
+          <Field label="Vendor Repair Date"><DatePickerField value={form.vendorRepairDate||""} onChange={v=>set("vendorRepairDate",v)}/></Field>
+          <Field label="Received Back Date"><DatePickerField value={form.receivedBackDate||""} onChange={v=>set("receivedBackDate",v)}/></Field>
           <Field label="Re-Issued To Vehicle"><Input value={form.reIssuedToVehicle||""} onChange={e=>set("reIssuedToVehicle",e.target.value)} placeholder="Vehicle number"/></Field>
 
           <SectionHead title="Disposal & Final Status"/>
-          <Field label="Scrap Date"><Input type="text" value={form.scrapDate||""} onChange={e=>set("scrapDate",e.target.value)} placeholder="e.g. 1-Dec-26"/></Field>
+          <Field label="Scrap Date"><DatePickerField value={form.scrapDate||""} onChange={v=>set("scrapDate",v)}/></Field>
           <Field label="Final Status" required><Select value={form.finalStatus||"Active"} onChange={e=>set("finalStatus",e.target.value)} required>{FINAL_STATUSES.map(s=><option key={s} value={s}>{s}</option>)}</Select></Field>
           <div/>
         </div>
@@ -1820,6 +2043,69 @@ function VehiclesPage() {
 }
 
 // ─── Vendors ─────────────────────────────────────────────────────────────────
+function ScrapVendorsPage() {
+  const [records,setRecords]=useState([]);
+  useEffect(()=>{ load('scrapvendors').then(setRecords); },[]);
+  const [modal,setModal]=useState(null);
+  const [search,setSearch]=useState("");
+  const [confirmId,setConfirmId]=useState(null);
+  const active=records.filter(r=>!r.deleted);
+  const filtered=active.filter(r=>{const q=search.toLowerCase();return !q||[r.name,r.contact,r.address].some(f=>(f||"").toLowerCase().includes(q));});
+  const save_=async data=>{
+    if(modal.mode==="add"){const newRecord={...data,id:uid(),deleted:false};await save('scrapvendors',[newRecord]);setRecords(r=>[...r,newRecord]);}
+    else{await save('scrapvendors',[data]);setRecords(r=>r.map(x=>x.id===data.id?data:x));}
+    toast("Record saved successfully", "success");
+    setModal(null);
+  };
+  const del = async id=>{
+    await deleteRecord('scrapvendors', id);
+    setRecords(r=>r.filter(x=>x.id!==id));
+    toast("Record deleted", "success");
+  };
+  
+
+  const blank={name:"",contact:"",address:""};
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
+        <PageHeading title="Scrap Vendors Info" sub={`${active.length} registered scrap vendors`}/>
+        <button onClick={()=>setModal({mode:"add",data:blank})} className="action-btn-primary" style={{marginTop:4}}><Icon name="plus" size={15}/> Add Vendor</button>
+      </div>
+      <div style={{marginBottom:16}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search vendors..." className="search-input"
+          style={{padding:"8px 12px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",width:280,boxSizing:"border-box"}}/>
+      </div>
+      <div className="table-wrapper">
+        {records.length===0&&<Skeleton/>}
+        <table style={{width:"100%",borderCollapse:"collapse",display:records.length===0?"none":"table"}}>
+          <thead><tr>{["S.No","Vendor Name","Contact","Address","Actions"].map(h=><Th key={h} style={{textAlign:"center"}}>{h}</Th>)}</tr></thead>
+          <tbody>
+            {filtered.length===0&&<tr><td colSpan={5} style={{padding:32,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No scrap vendors found.</td></tr>}
+            {filtered.map((v,i)=>(
+              <tr key={v.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+                <SnoTd>{i+1}</SnoTd>
+                <Td style={{color:"var(--text-primary)",fontWeight:600,textAlign:"center"}}>{v.name}</Td>
+                <Td style={{color:"var(--cyan)",textAlign:"center"}}>{v.contact||"—"}</Td>
+                <Td style={{maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",color:"var(--text-muted)",textAlign:"center"}}>{v.address||"—"}</Td>
+                <td style={{padding:"8px 14px",whiteSpace:"nowrap"}}>
+                  <button onClick={()=>setModal({mode:"edit",data:{...v}})} style={{background:"none",border:"none",cursor:"pointer",color:"var(--blue)",marginRight:8,padding:4}}><Icon name="edit" size={15}/></button>
+                  <button onClick={()=>setConfirmId(v.id)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--red)",padding:4}}><Icon name="trash" size={15}/></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {confirmId&&<ConfirmModal onConfirm={()=>del(confirmId)} onClose={()=>setConfirmId(null)}/>}
+      {modal&&(
+        <Modal title={modal.mode==="add"?"Add Scrap Vendor":"Edit Scrap Vendor"} onClose={()=>setModal(null)}>
+          <SimpleForm data={modal.data} fields={[{k:"name",label:"Vendor Name",required:true},{k:"contact",label:"Contact Number"},{k:"address",label:"Address",type:"textarea"}]} onSave={save_} onClose={()=>setModal(null)}/>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function VendorsPage() {
   const [records,setRecords]=useState([]);
   useEffect(()=>{ load('vendors').then(setRecords); },[]);
@@ -1984,7 +2270,7 @@ function PurchasePage() {
             className="search-input" style={{width:"100%",maxWidth:380,padding:"8px 12px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
         </div>
         {records.length===0&&<Skeleton/>}
-        <div style={{overflowX:"auto",display:records.length===0?"none":"block"}} className="scrollbar-dark">
+        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:records.length===0?"none":"block"}} className="scrollbar-dark">
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead>
               <tr>
@@ -2034,6 +2320,94 @@ function PurchasePage() {
   );
 }
 
+function DatePickerField({value, onChange}) {
+  const [show, setShow] = useState(false);
+  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const today = new Date();
+  const parseVal = v => {
+    if(!v) return null;
+    const p = v.trim().split(/[-\/\s]+/);
+    if(p.length < 3) return null;
+    const months = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+    const d = parseInt(p[0]);
+    const m = isNaN(parseInt(p[1])) ? months[p[1].toLowerCase().slice(0,3)] : parseInt(p[1])-1;
+    const y = parseInt(p[2]) < 100 ? 2000+parseInt(p[2]) : parseInt(p[2]);
+    return new Date(y, m, d);
+  };
+  const parsed = parseVal(value);
+  const [viewYear, setViewYear] = useState(parsed ? parsed.getFullYear() : today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(parsed ? parsed.getMonth() : today.getMonth());
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
+  const selectDay = d => {
+    const formatted = `${d}-${MONTHS_SHORT[viewMonth]}-${String(viewYear).slice(2)}`;
+    onChange(formatted);
+    setShow(false);
+  };
+  const prevMonth = () => { if(viewMonth===0){setViewMonth(11);setViewYear(y=>y-1);}else setViewMonth(m=>m-1); };
+  const nextMonth = () => { if(viewMonth===11){setViewMonth(0);setViewYear(y=>y+1);}else setViewMonth(m=>m+1); };
+  const selDay = parsed && parsed.getFullYear()===viewYear && parsed.getMonth()===viewMonth ? parsed.getDate() : null;
+  const todayDay = today.getFullYear()===viewYear && today.getMonth()===viewMonth ? today.getDate() : null;
+  const cells = [];
+  for(let i=0;i<firstDay;i++) cells.push(null);
+  for(let i=1;i<=daysInMonth;i++) cells.push(i);
+  return (
+    <div style={{position:"relative"}}>
+      <div style={{position:"relative"}}>
+        <Input
+          type="text"
+          value={value||""}
+          onChange={e=>onChange(e.target.value)}
+          placeholder="e.g. 1-Dec-26"
+          style={{width:"100%",paddingLeft:12,paddingRight:36,height:"38px",borderRadius:8}}
+        />
+        <button type="button" onClick={()=>setShow(s=>!s)} style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",background:"var(--accent-dim)",border:"1px solid var(--accent-glow)",borderRadius:6,cursor:"pointer",color:"var(--accent)",display:"flex",alignItems:"center",justifyContent:"center",padding:"3px 4px"}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </button>
+      </div>
+      {show && (
+        <div style={{position:"absolute",zIndex:9999,top:"calc(100% + 6px)",left:0,background:"var(--bg-elevated)",border:"1px solid var(--border-bright)",borderRadius:14,padding:16,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",minWidth:280}}>
+          {/* Header */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+            <button type="button" onClick={prevMonth} style={{background:"none",border:"none",color:"var(--text-primary)",cursor:"pointer",padding:"4px 8px",borderRadius:6,fontSize:16,lineHeight:1}}>‹</button>
+            <span style={{fontWeight:700,fontSize:14,color:"var(--text-primary)",fontFamily:"var(--font-display)"}}>{MONTHS[viewMonth]} {viewYear}</span>
+            <button type="button" onClick={nextMonth} style={{background:"none",border:"none",color:"var(--text-primary)",cursor:"pointer",padding:"4px 8px",borderRadius:6,fontSize:16,lineHeight:1}}>›</button>
+          </div>
+          {/* Day headers */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:4}}>
+            {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d=>(
+              <div key={d} style={{textAlign:"center",fontSize:11,fontWeight:600,color:"var(--text-muted)",padding:"4px 0"}}>{d}</div>
+            ))}
+          </div>
+          {/* Day cells */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+            {cells.map((d,i)=>(
+              d===null
+                ? <div key={i}/>
+                : <button key={i} type="button" onClick={()=>selectDay(d)} style={{
+                    background: d===selDay ? "var(--accent)" : d===todayDay ? "var(--accent-dim)" : "none",
+                    color: d===selDay ? "#000" : d===todayDay ? "var(--accent)" : "var(--text-primary)",
+                    border: d===todayDay && d!==selDay ? "1px solid var(--accent-glow)" : "1px solid transparent",
+                    borderRadius:7,padding:"6px 0",fontSize:13,fontWeight:d===selDay?700:400,cursor:"pointer",
+                    transition:"background 0.15s"
+                  }}
+                  onMouseEnter={e=>{if(d!==selDay)e.currentTarget.style.background="var(--bg-card)";}}
+                  onMouseLeave={e=>{if(d!==selDay)e.currentTarget.style.background="none";}}
+                  >{d}</button>
+            ))}
+          </div>
+          {/* Footer */}
+          <div style={{marginTop:12,borderTop:"1px solid var(--border)",paddingTop:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <button type="button" onClick={()=>{const t=new Date();setViewYear(t.getFullYear());setViewMonth(t.getMonth());selectDay(t.getDate());}} style={{background:"var(--accent-dim)",border:"1px solid var(--accent-glow)",borderRadius:7,padding:"5px 12px",fontSize:12,color:"var(--accent)",cursor:"pointer",fontWeight:600}}>Today</button>
+            <button type="button" onClick={()=>setShow(false)} style={{background:"none",border:"none",fontSize:12,color:"var(--text-muted)",cursor:"pointer"}}>Close</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PurchaseModal({data,mode,purchasedForOptions,onSave,onClose}) {
   const [form,setForm]=useState(data);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
@@ -2045,7 +2419,7 @@ function PurchaseModal({data,mode,purchasedForOptions,onSave,onClose}) {
         <Field label="Part Name" required><Input value={form.partName||""} onChange={e=>set("partName",e.target.value)} required/></Field>
         <Field label="Code"><Input value={form.code||""} onChange={e=>set("code",e.target.value)} placeholder="e.g. ENG-001"/></Field>
         <Field label="Part ID"><Input value={form.partId||""} onChange={e=>set("partId",e.target.value)} placeholder="e.g. CP-001"/></Field>
-        <Field label="Purchase Date"><Input type="text" value={form.purchaseDate||""} onChange={e=>set("purchaseDate",e.target.value)} placeholder="e.g. 1-Dec-26"/></Field>
+        <Field label="Purchase Date"><DatePickerField value={form.purchaseDate||""} onChange={v=>set("purchaseDate",v)}/></Field>
         <Field label="Purchase Amount (PKR)"><Input type="number" min="0" value={form.purchaseAmount||""} onChange={e=>set("purchaseAmount",e.target.value)} placeholder="e.g. 15000"/></Field>
         <Field label="Purchased For" required>
           <Select value={form.purchasedFor||""} onChange={e=>set("purchasedFor",e.target.value)} required>
@@ -2156,7 +2530,7 @@ function RepairPage() {
             className="search-input" style={{width:"100%",maxWidth:400,padding:"8px 12px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
         </div>
         {records.length===0&&<Skeleton/>}
-        <div style={{overflowX:"auto",display:records.length===0?"none":"block"}} className="scrollbar-dark">
+        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:records.length===0?"none":"block"}} className="scrollbar-dark">
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead>
               <tr>
@@ -2215,6 +2589,40 @@ function RepairPage() {
   );
 }
 
+function ScrapVendorSelect({value, onChange}) {
+  const [vendors, setVendors] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(()=>{
+    load('scrapvendors').then(v=>{
+      setVendors(v.filter(x=>!x.deleted));
+      setLoading(false);
+    });
+  },[]);
+  if(loading) return <div style={{fontSize:12,color:"var(--text-muted)",padding:"8px 12px"}}>Loading vendors...</div>;
+  if(vendors.length===0) return (
+    <div style={{fontSize:12,color:"var(--red)",padding:"8px 12px",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.2)",borderRadius:8}}>
+      No scrap vendors found. Please add vendors in Scrap Vendors Info first.
+    </div>
+  );
+  return (
+    <Select value={value} onChange={e=>onChange(e.target.value)}>
+      <option value="">Select scrap vendor...</option>
+      {vendors.map(v=><option key={v.id} value={v.name}>{v.name}</option>)}
+    </Select>
+  );
+}
+
+function VendorSelect({value, onChange}) {
+  const [vendors, setVendors] = useState([]);
+  useEffect(()=>{ load('vendors').then(v=>setVendors(v.filter(x=>!x.deleted))); },[]);
+  return (
+    <Select value={value} onChange={e=>onChange(e.target.value)}>
+      <option value="">Select vendor...</option>
+      {vendors.map(v=><option key={v.id} value={v.name}>{v.name}</option>)}
+    </Select>
+  );
+}
+
 function RepairModal({data,mode,statuses,onSave,onClose}) {
   const [form,setForm]=useState(data);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
@@ -2222,7 +2630,17 @@ function RepairModal({data,mode,statuses,onSave,onClose}) {
   return (
     <form onSubmit={submit}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-        <Field label="Date Sent"><Input type="text" value={form.dateSent||""} onChange={e=>set("dateSent",e.target.value)} placeholder="e.g. 1-Dec-26"/></Field>
+        <Field label="Date Sent"><DatePickerField value={form.dateSent||""} onChange={v=>{
+  set("dateSent",v);
+  if(form.dateReceived&&v){
+    const d1=new Date(v);
+    const d2=new Date(form.dateReceived);
+    if(!isNaN(d1)&&!isNaN(d2)){
+      const diff=Math.round((d2-d1)/(1000*86400));
+      if(diff>=0) set("repairDuration",diff.toString());
+    }
+  }
+}}/></Field>
 <Field label="Request Ref #"><Input value={form.requestRefNo||""} onChange={e=>set("requestRefNo",e.target.value)} placeholder="e.g. REQ-001"/></Field>
 <Field label="OGP No"><Input value={form.ogpNo||""} onChange={e=>set("ogpNo",e.target.value)} placeholder="e.g. OGP-001"/></Field>
 <Field label="Vehicle Group"><Input value={form.vehicleGroup||""} onChange={e=>set("vehicleGroup",e.target.value)} placeholder="e.g. Mini Tippers"/></Field>
@@ -2231,10 +2649,22 @@ function RepairModal({data,mode,statuses,onSave,onClose}) {
 <Field label="Part ID"><Input value={form.partId||""} onChange={e=>set("partId",e.target.value)} placeholder="e.g. CP-001"/></Field>
 <Field label="Qty Repaired"><Input type="number" min="1" value={form.qtyRepaired||""} onChange={e=>set("qtyRepaired",e.target.value)} placeholder="e.g. 1"/></Field>
 <Field label="Part Serial No"><Input value={form.partSerialNo||""} onChange={e=>set("partSerialNo",e.target.value)} placeholder="e.g. SN-001"/></Field>
-<Field label="Repair Vendor Name" required><Input value={form.repairVendorName||""} onChange={e=>set("repairVendorName",e.target.value)} required/></Field>
-<Field label="Expected Return Date"><Input type="text" value={form.expectedReturnDate||""} onChange={e=>set("expectedReturnDate",e.target.value)} placeholder="e.g. 1-Dec-26"/></Field>
-<Field label="Date Received"><Input type="text" value={form.dateReceived||""} onChange={e=>set("dateReceived",e.target.value)} placeholder="e.g. 1-Dec-26"/></Field>
-<Field label="Repair Duration (Days)"><Input type="number" min="0" value={form.repairDuration||""} onChange={e=>set("repairDuration",e.target.value)} placeholder="e.g. 5"/></Field>
+<Field label="Repair Vendor Name" required>
+  <VendorSelect value={form.repairVendorName||""} onChange={v=>set("repairVendorName",v)}/>
+</Field>
+<Field label="Expected Return Date"><DatePickerField value={form.expectedReturnDate||""} onChange={v=>set("expectedReturnDate",v)}/></Field>
+<Field label="Date Received"><DatePickerField value={form.dateReceived||""} onChange={v=>{
+  set("dateReceived",v);
+  if(form.dateSent&&v){
+    const d1=new Date(form.dateSent);
+    const d2=new Date(v);
+    if(!isNaN(d1)&&!isNaN(d2)){
+      const diff=Math.round((d2-d1)/(1000*86400));
+      if(diff>=0) set("repairDuration",diff.toString());
+    }
+  }
+}}/></Field>
+<Field label="Repair Duration (Days)"><Input type="number" min="0" value={form.repairDuration||""} onChange={e=>set("repairDuration",e.target.value)} placeholder="Auto-calculated or enter manually"/></Field>
 <Field label="IGP No"><Input value={form.igpNo||""} onChange={e=>set("igpNo",e.target.value)} placeholder="e.g. IGP-001"/></Field>
 <Field label="Repair Cost (PKR)"><Input type="number" min="0" value={form.repairCost||""} onChange={e=>set("repairCost",e.target.value)} placeholder="e.g. 5000"/></Field>
 <Field label="Part Status" required>
@@ -2330,7 +2760,7 @@ function ScrapPage() {
             className="search-input" style={{width:"100%",maxWidth:400,padding:"8px 12px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
         </div>
         {records.length===0&&<Skeleton/>}
-        <div style={{overflowX:"auto",display:records.length===0?"none":"block"}} className="scrollbar-dark">
+        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:records.length===0?"none":"block"}} className="scrollbar-dark">
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead>
               <tr>
@@ -2396,13 +2826,15 @@ function ScrapModal({data,mode,qtyUnits,onSave,onClose}) {
         <Field label="Code"><Input value={form.code||""} onChange={e=>set("code",e.target.value)} placeholder="e.g. ENG-001"/></Field>
         <Field label="Part ID"><Input value={form.partId||""} onChange={e=>set("partId",e.target.value)} placeholder="e.g. CP-001"/></Field>
         <Field label="Serial No"><Input value={form.serialNo||""} onChange={e=>set("serialNo",e.target.value)} placeholder="e.g. SN-001"/></Field>
-        <Field label="Scrap Vendor Name" required><Input value={form.scrapVendorName||""} onChange={e=>set("scrapVendorName",e.target.value)} required/></Field>
-        <Field label="Sold Date"><Input type="text" value={form.soldDate||""} onChange={e=>set("soldDate",e.target.value)} placeholder="e.g. 1-Dec-26"/></Field>
+        <Field label="Scrap Vendor Name" required>
+  <ScrapVendorSelect value={form.scrapVendorName||""} onChange={v=>set("scrapVendorName",v)}/>
+</Field>
+        <Field label="Sold Date"><DatePickerField value={form.soldDate||""} onChange={v=>set("soldDate",v)}/></Field>
         <Field label="GP No"><Input value={form.gpNo||""} onChange={e=>set("gpNo",e.target.value)} placeholder="e.g. GP-001"/></Field>
         <Field label="Bill No"><Input value={form.billNo||""} onChange={e=>set("billNo",e.target.value)} placeholder="e.g. BILL-001"/></Field>
         <Field label="Quantity">
           <div style={{display:"flex",gap:8}}>
-            <Input type="number" min="0" value={form.quantity||""} onChange={e=>set("quantity",e.target.value)} placeholder="e.g. 10" style={{flex:2}}/>
+            <Input type="number" min="0" value={form.quantity||""} onChange={e=>set("quantity",e.target.value)} placeholder="e.g. 10" style={{flex:2,borderRadius:8,paddingLeft:14}}/>
             <div style={{flex:1}}>
               <Select value={form.qtyUnit||"Piece"} onChange={e=>set("qtyUnit",e.target.value)}>
                 {qtyUnits.map(u=><option key={u} value={u}>{u}</option>)}
@@ -2567,34 +2999,60 @@ function SearchPage({initialQuery=""}) {
   const [query,setQuery]=useState(initialQuery);
   const [movements,setMovements]=useState([]);
   const [issued,setIssued]=useState([]);
-  const [vehicles,setVehicles]=useState([]);
+  const [repair,setRepair]=useState([]);
+  const [purchase,setPurchase]=useState([]);
+  const [scrap,setScrap]=useState([]);
   const [vendors,setVendors]=useState([]);
+
+  // edit/delete state
+  const [movModal,setMovModal]=useState(null);
+  const [issuedModal,setIssuedModal]=useState(null);
+  const [repairModal,setRepairModal]=useState(null);
+  const [confirmDel,setConfirmDel]=useState(null);
+
   useEffect(()=>{
     load('movements').then(setMovements);
     load('issued').then(setIssued);
-    load('vehicles').then(setVehicles);
+    load('repair').then(setRepair);
+    load('purchase').then(setPurchase);
+    load('scrap').then(setScrap);
     load('vendors').then(setVendors);
   },[]);
+
   const q=query.toLowerCase().trim();
 
   const results=useMemo(()=>{
-    if(!q)return{movements:[],issued:[],vehicles:[],vendors:[]};
+    if(!q)return{movements:[],issued:[],repair:[],purchase:[],scrap:[]};
     return {
-      movements:movements.filter(m=>[m.vehicleNumber,m.itemName,m.itemCode,m.vendorName,m.status].some(f=>(f||"").toLowerCase().includes(q))),
-      issued:issued.filter(r=>[r.vehicleNumber,r.itemName,r.itemCode,r.gpNumber,r.issuedBy].some(f=>(f||"").toLowerCase().includes(q))),
-      vehicles:vehicles.filter(v=>[v.number,v.model].some(f=>(f||"").toLowerCase().includes(q))),
-      vendors:vendors.filter(v=>[v.name,v.workshop,v.address].some(f=>(f||"").toLowerCase().includes(q))),
+      movements:movements.filter(m=>[m.vehicleNumber,m.partName,m.partId,m.finalStatus,m.actionTaken].some(f=>(f||"").toLowerCase().includes(q))),
+      issued:issued.filter(r=>[r.vehicleNumber,r.itemName,r.itemCode,r.gpNumber,r.issuedBy,r.issuedTo,r.partId].some(f=>(f||"").toLowerCase().includes(q))),
+      repair:repair.filter(r=>[r.vehicleNo,r.partName,r.partId,r.repairVendorName,r.ogpNo,r.igpNo].some(f=>(f||"").toLowerCase().includes(q))),
+      purchase:purchase.filter(r=>[r.vendorName,r.partName,r.code,r.partId,r.purchasedFor].some(f=>(f||"").toLowerCase().includes(q))),
+      scrap:scrap.filter(r=>[r.partName,r.code,r.partId,r.scrapVendorName,r.gpNo].some(f=>(f||"").toLowerCase().includes(q))),
     };
-  },[q]);
+  },[q,movements,issued,repair,purchase,scrap]);
 
   const total=Object.values(results).reduce((s,a)=>s+a.length,0);
 
+  const delRecord = async (table, id, setter) => {
+    await deleteRecord(table, id);
+    setter(r=>r.filter(x=>x.id!==id));
+    toast("Record deleted","success");
+  };
+
+  const ActionBtns = ({onEdit,onDelete}) => (
+    <td style={{padding:"8px 14px",whiteSpace:"nowrap"}}>
+      <button onClick={onEdit} style={{background:"none",border:"none",cursor:"pointer",color:"var(--blue)",marginRight:8,padding:4}}><Icon name="edit" size={15}/></button>
+      <button onClick={onDelete} style={{background:"none",border:"none",cursor:"pointer",color:"var(--red)",padding:4}}><Icon name="trash" size={15}/></button>
+    </td>
+  );
+
   return (
     <div>
-      <PageHeading title="Global Search" sub="Search across all records"/>
+      <PageHeading title="Search Engine" sub="Search across all records"/>
       <div style={{position:"relative",maxWidth:560,marginBottom:22}}>
         <Icon name="search" size={17} style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",color:"var(--text-muted)"}}/>
-        <input autoFocus value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search vehicles, parts, item codes, vendors..."
+        <input autoFocus value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search parts, vehicles, vendors, codes..."
           className="search-input" style={{width:"100%",padding:"12px 16px 12px 44px",borderRadius:10,fontSize:15,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
       </div>
       {q&&<div style={{fontSize:13,color:"var(--text-muted)",marginBottom:20}}>Found <span style={{color:"var(--accent)",fontWeight:700}}>{total}</span> result{total!==1?"s":""} for "<span style={{color:"var(--text-primary)"}}>{query}</span>"</div>}
@@ -2604,13 +3062,19 @@ function SearchPage({initialQuery=""}) {
       {results.movements.length>0&&(
         <SearchSection title="Maintenance Records" count={results.movements.length} color="var(--purple)">
           <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead><tr>{["Vehicle","Item","Code","Status","Vendor","Date"].map(h=><Th key={h}>{h}</Th>)}</tr></thead>
+            <thead><tr>{["Vehicle","Part Name","Part ID","Final Status","Action Taken","Date","Actions"].map(h=><Th key={h}>{h}</Th>)}</tr></thead>
             <tbody>{results.movements.map(r=>(
               <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
-                <Td style={{color:"var(--accent)",fontWeight:700}}>{r.vehicleNumber}</Td>
-                <Td style={{color:"var(--text-primary)"}}>{r.itemName}</Td>
-                <Td><code style={{fontSize:12,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)"}}>{r.itemCode}</code></Td>
-                <Td><Badge status={r.status}/></Td><Td style={{color:"var(--text-secondary)"}}>{r.vendorName||"—"}</Td><Td style={{color:"var(--text-muted)"}}>{r.issuedDate}</Td>
+                <Td style={{color:"var(--accent)",fontWeight:700}}>{r.vehicleNumber||"—"}</Td>
+                <Td style={{color:"var(--text-primary)",fontWeight:500}}>{r.partName||"—"}</Td>
+                <Td><code style={{fontSize:12,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)"}}>{r.partId||"—"}</code></Td>
+                <Td><Badge status={r.finalStatus} cfg={FINAL_STATUS_CFG}/></Td>
+                <Td style={{color:"var(--text-secondary)"}}>{r.actionTaken||"—"}</Td>
+                <Td style={{color:"var(--text-muted)"}}>{r.issueDate||"—"}</Td>
+                <ActionBtns
+                  onEdit={()=>setMovModal({mode:"edit",data:{...r}})}
+                  onDelete={()=>setConfirmDel({table:"movements",id:r.id,setter:setMovements})}
+                />
               </tr>
             ))}</tbody>
           </table>
@@ -2618,46 +3082,91 @@ function SearchPage({initialQuery=""}) {
       )}
 
       {results.issued.length>0&&(
-        <SearchSection title="Issued Parts" count={results.issued.length} color="var(--blue)">
+        <SearchSection title="Parts Issued" count={results.issued.length} color="var(--blue)">
           <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead><tr>{["Vehicle","Item","Code","GP Number","Issued By","Date"].map(h=><Th key={h}>{h}</Th>)}</tr></thead>
+            <thead><tr>{["Vehicle","Item Name","Code","GP Number","Issued By","Date","Actions"].map(h=><Th key={h}>{h}</Th>)}</tr></thead>
             <tbody>{results.issued.map(r=>(
               <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
-                <Td style={{color:"var(--accent)",fontWeight:700}}>{r.vehicleNumber}</Td>
-                <Td style={{color:"var(--text-primary)"}}>{r.itemName}</Td>
-                <Td><code style={{fontSize:12,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)"}}>{r.itemCode}</code></Td>
-                <Td style={{color:"var(--text-secondary)"}}>{r.gpNumber||"—"}</Td><Td>{r.issuedBy||"—"}</Td><Td style={{color:"var(--text-muted)"}}>{r.issueDate}</Td>
+                <Td style={{color:"var(--accent)",fontWeight:700}}>{r.vehicleNumber||"—"}</Td>
+                <Td style={{color:"var(--text-primary)"}}>{r.itemName||"—"}</Td>
+                <Td><code style={{fontSize:12,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)"}}>{r.itemCode||"—"}</code></Td>
+                <Td style={{color:"var(--text-secondary)"}}>{r.gpNumber||"—"}</Td>
+                <Td>{r.issuedBy||"—"}</Td>
+                <Td style={{color:"var(--text-muted)"}}>{r.issueDate||"—"}</Td>
+                <ActionBtns
+                  onEdit={()=>setIssuedModal({mode:"edit",data:{...r}})}
+                  onDelete={()=>setConfirmDel({table:"issued",id:r.id,setter:setIssued})}
+                />
               </tr>
             ))}</tbody>
           </table>
         </SearchSection>
       )}
 
-      {results.vehicles.length>0&&(
-        <SearchSection title="Vehicles" count={results.vehicles.length} color="var(--accent)">
-          <div style={{display:"flex",gap:10,flexWrap:"wrap",padding:14}}>
-            {results.vehicles.map(v=>(
-              <div key={v.id} style={{background:"var(--bg-surface)",border:"1px solid var(--border-bright)",borderRadius:10,padding:"10px 16px",display:"flex",alignItems:"center",gap:10}}>
-                <div style={{color:"var(--accent)"}}><Icon name="truck" size={16}/></div>
-                <div><div style={{fontWeight:700,color:"var(--accent)",fontSize:13}}>{v.number}</div><div style={{fontSize:12,color:"var(--text-muted)"}}>{v.model||"—"}</div></div>
-              </div>
-            ))}
-          </div>
+      {results.repair.length>0&&(
+        <SearchSection title="Repair & Maintenance" count={results.repair.length} color="var(--purple)">
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>{["Vehicle","Part Name","Part ID","Vendor","OGP #","Date Sent","Status","Actions"].map(h=><Th key={h}>{h}</Th>)}</tr></thead>
+            <tbody>{results.repair.map(r=>(
+              <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+                <Td style={{color:"var(--accent)",fontWeight:700}}>{r.vehicleNo||"—"}</Td>
+                <Td style={{color:"var(--text-primary)"}}>{r.partName||"—"}</Td>
+                <Td><code style={{fontSize:12,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)"}}>{r.partId||"—"}</code></Td>
+                <Td>{r.repairVendorName||"—"}</Td>
+                <Td style={{color:"var(--cyan)",fontWeight:600}}>{r.ogpNo||"—"}</Td>
+                <Td style={{color:"var(--text-muted)"}}>{r.dateSent||"—"}</Td>
+                <Td>{r.partStatus?<Badge status={r.partStatus}/>:"—"}</Td>
+                <ActionBtns
+                  onEdit={()=>setRepairModal({mode:"edit",data:{...r}})}
+                  onDelete={()=>setConfirmDel({table:"repair",id:r.id,setter:setRepair})}
+                />
+              </tr>
+            ))}</tbody>
+          </table>
         </SearchSection>
       )}
 
-      {results.vendors.length>0&&(
-        <SearchSection title="Vendors" count={results.vendors.length} color="var(--cyan)">
-          <div style={{display:"flex",gap:10,flexWrap:"wrap",padding:14}}>
-            {results.vendors.map(v=>(
-              <div key={v.id} style={{background:"var(--bg-surface)",border:"1px solid var(--border-bright)",borderRadius:10,padding:"10px 16px"}}>
-                <div style={{fontWeight:700,color:"var(--text-primary)",fontSize:13}}>{v.name}</div>
-                <div style={{fontSize:12,color:"var(--text-muted)",marginTop:2}}>{v.workshop||"—"} · {v.contact||"—"}</div>
-              </div>
-            ))}
-          </div>
+      {results.purchase.length>0&&(
+        <SearchSection title="Parts Purchase" count={results.purchase.length} color="var(--cyan)">
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>{["Vendor","Part Name","Code","Part ID","Date","Amount","Purchased For"].map(h=><Th key={h}>{h}</Th>)}</tr></thead>
+            <tbody>{results.purchase.map(r=>(
+              <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+                <Td style={{color:"var(--text-primary)",fontWeight:600}}>{r.vendorName||"—"}</Td>
+                <Td>{r.partName||"—"}</Td>
+                <Td><code style={{fontSize:12,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)"}}>{r.code||"—"}</code></Td>
+                <Td style={{color:"var(--text-secondary)"}}>{r.partId||"—"}</Td>
+                <Td style={{color:"var(--text-muted)"}}>{r.purchaseDate||"—"}</Td>
+                <Td style={{color:"var(--accent)",fontWeight:700}}>{r.purchaseAmount?`PKR ${Number(r.purchaseAmount).toLocaleString()}`:"—"}</Td>
+                <Td>{r.purchasedFor||"—"}</Td>
+              </tr>
+            ))}</tbody>
+          </table>
         </SearchSection>
       )}
+
+      {results.scrap.length>0&&(
+        <SearchSection title="Scrap Register" count={results.scrap.length} color="var(--red)">
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr>{["Part Name","Code","Part ID","Vendor","Sold Date","Amount"].map(h=><Th key={h}>{h}</Th>)}</tr></thead>
+            <tbody>{results.scrap.map(r=>(
+              <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+                <Td style={{color:"var(--text-primary)",fontWeight:600}}>{r.partName||"—"}</Td>
+                <Td><code style={{fontSize:12,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)"}}>{r.code||"—"}</code></Td>
+                <Td style={{color:"var(--text-secondary)"}}>{r.partId||"—"}</Td>
+                <Td>{r.scrapVendorName||"—"}</Td>
+                <Td style={{color:"var(--text-muted)"}}>{r.soldDate||"—"}</Td>
+                <Td style={{color:"var(--green)",fontWeight:700}}>{r.scrapCost?`PKR ${Number(r.scrapCost).toLocaleString()}`:"—"}</Td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </SearchSection>
+      )}
+
+      {confirmDel&&<ConfirmModal onConfirm={()=>delRecord(confirmDel.table,confirmDel.id,confirmDel.setter)} onClose={()=>setConfirmDel(null)}/>}
+      {movModal&&<MovementModal mode={movModal.mode} data={movModal.data} vehicles={[]} vendors={[]} onSave={async data=>{await save('movements',[data]);setMovements(r=>r.map(x=>x.id===data.id?data:x));toast("Saved","success");setMovModal(null);}} onClose={()=>setMovModal(null)}/>}
+      {issuedModal&&<IssuedModal mode={issuedModal.mode} data={issuedModal.data} vehicles={[]} onSave={async data=>{await save('issued',[data]);setIssued(r=>r.map(x=>x.id===data.id?data:x));toast("Saved","success");setIssuedModal(null);}} onClose={()=>setIssuedModal(null)}/>}
+      {repairModal&&<RepairModal mode={repairModal.mode} data={repairModal.data} statuses={["Received after repair","Received without repair","Sent for Scrap Sold","At Stores","At Workshop","At Vendor"]} onSave={async data=>{await save('repair',[data]);setRepair(r=>r.map(x=>x.id===data.id?data:x));toast("Saved","success");setRepairModal(null);}} onClose={()=>setRepairModal(null)}/>}
     </div>
   );
 }
@@ -3020,8 +3529,8 @@ function VehicleMaintenanceForm() {
       .field span{border-bottom:1px solid #000;flex:1;min-width:80px;padding-bottom:2px;}
       .section-title{font-weight:800;font-size:12px;margin:14px 0 6px;border-bottom:2px solid #000;padding-bottom:4px;}
       table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:10px;}
-      th{background:#f0f0f0;border:1px solid #000;padding:5px 6px;text-align:center;font-weight:700;}
-      td{border:1px solid #000;padding:4px 6px;text-align:center;}
+      th{background:#f0f0f0;border:1px solid #000;padding:10px 10px;text-align:center;font-weight:700;}
+      td{border:1px solid #000;padding:10px 10px;text-align:center;height:36px;}
       .checkbox-row{margin:8px 0;font-size:11px;}
       .sig-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:30px;}
       .sig-box{text-align:center;}
@@ -3045,15 +3554,7 @@ function VehicleMaintenanceForm() {
         <div class="field"><label>Item Name:</label><span>${itemName}</span></div>
         <div class="field"><label>Mechanic Name:</label><span>${mechanicName}</span></div>
       </div>
-      <div class="section-title">Vehicle Maintenance / Repair Notes (to be filled by Workshop Incharge):</div>
-      <div style="border:1px solid #000;min-height:60px;padding:6px;margin-bottom:10px;">${maintenanceNotes}</div>
-      <div class="checkbox-row">
-        <strong>Action Required for Returned Part(s):</strong>&nbsp;&nbsp;
-        ${["Repair","Scrap","Re-Issue","Others"].map(a=>`<span style="margin-right:16px;">[${actionRequired.includes(a)?"✓":" "}] ${a}${a==="Others"?" Specify: "+othersSpecify:""}</span>`).join("")}
-      </div>
-      <div class="sig-grid" style="grid-template-columns:1fr 1fr;margin-bottom:16px;">
-        <div class="sig-box"><div class="sig-line">Mechanic Incharge</div><div style="font-size:10px;margin-top:3px;">${mechanicIncharge}</div></div>
-        <div class="sig-box"><div class="sig-line">Workshop Incharge</div><div style="font-size:10px;margin-top:3px;">${workshopIncharge}</div></div>
+      ${workshopIncharge}</div></div>
       </div>
       <div class="section-title">Issued & Replaced Vehicle Parts Details (to be filled by Stores Dept):</div>
       <table>
@@ -3156,45 +3657,7 @@ function VehicleMaintenanceForm() {
           ))}
         </div>
 
-        {/* Maintenance Notes */}
-        <div style={{marginBottom:16}}>
-          <div style={{fontSize:13,fontWeight:800,color:"var(--text-primary)",borderBottom:"2px solid var(--border-bright)",paddingBottom:6,marginBottom:10}}>
-            Vehicle Maintenance / Repair Notes (to be filled by Workshop Incharge):
-          </div>
-          <textarea value={maintenanceNotes} onChange={e=>setMaintenanceNotes(e.target.value)} placeholder="Enter maintenance/repair notes..."
-            style={{width:"100%",background:"var(--bg-elevated)",border:"1px solid var(--border-bright)",borderRadius:8,padding:"10px 12px",color:"#e2e8f0",fontSize:13,fontFamily:"var(--font-body)",minHeight:80,resize:"vertical",outline:"none"}}/>
-        </div>
-
-        {/* Action Required */}
-        <div style={{marginBottom:16,padding:"12px 16px",background:"var(--bg-elevated)",borderRadius:10,border:"1px solid var(--border-bright)"}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:10}}>Action Required for Returned Part(s):</div>
-          <div style={{display:"flex",gap:20,flexWrap:"wrap",alignItems:"center"}}>
-            {["Repair","Scrap","Re-Issue","Others"].map(a=>(
-              <label key={a} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",color:"var(--text-secondary)",fontSize:13,fontWeight:600}}>
-                <input type="checkbox" checked={actionRequired.includes(a)} onChange={()=>toggleAction(a)}
-                  style={{width:16,height:16,accentColor:"var(--accent)",cursor:"pointer"}}/>
-                {a}
-              </label>
-            ))}
-            {actionRequired.includes("Others")&&(
-              <input value={othersSpecify} onChange={e=>setOthersSpecify(e.target.value)} placeholder="Specify..."
-                style={{...fieldInp,width:180}}/>
-            )}
-          </div>
-        </div>
-
-        {/* Workshop signatures */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 40px",marginBottom:20}}>
-          {[
-            {label:"Mechanic Incharge", val:mechanicIncharge, set:setMechanicIncharge},
-            {label:"Workshop Incharge", val:workshopIncharge, set:setWorkshopIncharge},
-          ].map(({label,val,set})=>(
-            <div key={label} style={{display:"grid",gridTemplateColumns:"160px 1fr",alignItems:"end",gap:8}}>
-              <label style={{fontSize:13,fontWeight:700,color:"#e2e8f0",textAlign:"right"}}>{label}:</label>
-              <input value={val} onChange={e=>set(e.target.value)} style={fieldInp}/>
-            </div>
-          ))}
-        </div>
+        
 
         {/* Issued Parts Table */}
         <div style={{fontSize:13,fontWeight:800,color:"var(--text-primary)",borderBottom:"2px solid var(--border-bright)",paddingBottom:6,marginBottom:10}}>
@@ -3311,6 +3774,814 @@ function VehicleMaintenanceForm() {
     </div>
   );
 }
+function VehicleMaintenanceRequestForm() {
+  const company = getCompany();
+  const companyName = company === "aysis" ? "Aysis International Waste Management Com Pvt Ltd" : "AltasPak Waste Management Com Pvt Ltd";
+
+  const [workshopName, setWorkshopName] = useState("");
+  const [requestNo, setRequestNo] = useState("");
+  const [vehicleNo, setVehicleNo] = useState("");
+  const [date, setDate] = useState("");
+  const [driverName, setDriverName] = useState("");
+  const [itemName, setItemName] = useState("");
+  const [mechanicName, setMechanicName] = useState("");
+  const [maintenanceNotes, setMaintenanceNotes] = useState("");
+  const [actionRequired, setActionRequired] = useState([]);
+  const [othersSpecify, setOthersSpecify] = useState("");
+  const [mechanicIncharge, setMechanicIncharge] = useState("");
+  const [approvedBy, setApprovedBy] = useState("");
+  const [workshopIncharge, setWorkshopIncharge] = useState("");
+  const [adminHead, setAdminHead] = useState("");
+
+  const toggleAction = (val) => setActionRequired(prev => prev.includes(val) ? prev.filter(x=>x!==val) : [...prev, val]);
+
+  const fieldInp = {width:"100%",background:"transparent",border:"none",borderBottom:"2px solid var(--border-bright)",outline:"none",color:"#e2e8f0",fontSize:13,fontFamily:"var(--font-body)",padding:"4px 0"};
+
+  const exportPDF = () => {
+    const html = `<!DOCTYPE html><html><head><style>
+      *{box-sizing:border-box;margin:0;padding:0;}
+      body{font-family:Arial,sans-serif;padding:32px;font-size:14px;color:#000;}
+      .company{text-align:center;font-size:17px;font-weight:900;text-transform:uppercase;margin-bottom:6px;}
+      .form-title{text-align:center;font-size:17px;font-weight:800;letter-spacing:0.08em;margin-bottom:22px;}
+      .field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px 50px;margin-bottom:14px;}
+      .field{display:flex;gap:8px;align-items:flex-end;}
+      .field label{font-weight:700;white-space:nowrap;font-size:13px;}
+      .field span{border-bottom:1px solid #000;flex:1;min-width:100px;padding-bottom:3px;font-size:14px;}
+      .section-title{font-weight:800;font-size:13px;margin:18px 0 8px;}
+      .notes-box{border:1px solid #000;min-height:120px;padding:8px;margin-bottom:18px;}
+      .checkbox-row{margin:12px 0;font-size:13px;}
+      .sig-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:28px;margin-top:60px;}
+      .sig-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:16px;}
+      .sig-box{text-align:center;}
+      .sig-line{border-top:1px solid #000;padding-top:6px;margin-top:40px;font-size:13px;font-weight:700;}
+      .sig-name{font-size:12px;color:#333;margin-top:4px;}
+      .workshop-line{display:flex;gap:10px;align-items:flex-end;justify-content:center;margin-bottom:20px;}
+      .workshop-line label{font-weight:700;font-size:14px;}
+      .workshop-line span{border-bottom:1px solid #000;min-width:240px;padding-bottom:3px;}
+      @media print{body{padding:16px;}}
+    </style></head><body>
+      <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:6px;">
+        <img src="${company==="aysis"?"./Aysis International Waste Management.png":"./Pak altas.png"}" style="width:90px;height:90px;object-fit:contain;" onerror="this.style.display='none'"/>
+        <div class="company">${companyName}</div>
+      </div>
+      <div class="form-title">VEHICLE MAINTENANCE REQUEST FORM</div>
+      <div class="workshop-line"><label>Workshop Name:</label><span>${workshopName}</span></div>
+      <div class="field-row">
+        <div class="field"><label>Request #:</label><span>${requestNo}</span></div>
+        <div class="field"><label>Vehicle #:</label><span>${vehicleNo}</span></div>
+        <div class="field"><label>Date:</label><span>${date}</span></div>
+        <div class="field"><label>Driver Name:</label><span>${driverName}</span></div>
+        <div class="field"><label>Item Name:</label><span>${itemName}</span></div>
+        <div class="field"><label>Mechanic Name:</label><span>${mechanicName}</span></div>
+      </div>
+      <div class="section-title">Vehicle Maintenance / Repair Notes (to be filled by Workshop Incharge):</div>
+      <div class="notes-box">${maintenanceNotes}</div>
+      <div class="checkbox-row">
+        <strong>Action Required for Returned Part(s):</strong>&nbsp;&nbsp;
+        ${["Repair","Scrap","Re-Issue","Others"].map(a=>`<span style="margin-right:16px;">[${actionRequired.includes(a)?"✓":" "}] ${a}${a==="Others"&&othersSpecify?" Specify: "+othersSpecify:""}</span>`).join("")}
+      </div>
+      <div class="sig-grid">
+       
+      </div>
+    </body></html>`;
+    const win = window.open('','_blank');
+    win.document.write(html);
+    win.document.close();
+    win.print();
+  };
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
+        <PageHeading title="Vehicle Maintenance Request Form" sub="Fill and export as PDF"/>
+        <button onClick={exportPDF} className="action-btn-primary"><Icon name="download" size={15}/> Export PDF</button>
+      </div>
+
+      <div style={{background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:16,padding:24}}>
+
+        {/* Header */}
+        <div style={{textAlign:"center",marginBottom:20,paddingBottom:14,borderBottom:"2px solid var(--border-bright)"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:16,marginBottom:6}}>
+            <img src={company==="aysis"?"./Aysis International Waste Management.png":"./Pak Altas white.png"} alt="logo" style={{width:80,height:80,objectFit:"contain"}} onError={e=>e.target.style.display="none"}/>
+            <div>
+              <div style={{fontSize:16,fontWeight:900,color:"var(--text-primary)",textTransform:"uppercase",fontFamily:"var(--font-display)"}}>{companyName}</div>
+              <div style={{fontSize:14,fontWeight:800,color:"var(--accent)",letterSpacing:"0.08em",marginTop:4}}>VEHICLE MAINTENANCE REQUEST FORM</div>
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginTop:8}}>
+            <label style={{fontSize:13,fontWeight:700,color:"#e2e8f0"}}>Workshop Name:</label>
+            <input value={workshopName} onChange={e=>setWorkshopName(e.target.value)} placeholder="Enter workshop name" style={{...fieldInp,width:220}}/>
+          </div>
+        </div>
+
+        {/* Fields */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 40px",marginBottom:16}}>
+          {[
+            {label:"Request #", val:requestNo, set:setRequestNo},
+            {label:"Vehicle #", val:vehicleNo, set:setVehicleNo},
+            {label:"Date", val:date, set:setDate},
+            {label:"Driver Name", val:driverName, set:setDriverName},
+            {label:"Item Name", val:itemName, set:setItemName},
+            {label:"Mechanic Name", val:mechanicName, set:setMechanicName},
+          ].map(({label,val,set})=>(
+            <div key={label} style={{display:"grid",gridTemplateColumns:"140px 1fr",alignItems:"end",gap:8}}>
+              <label style={{fontSize:13,fontWeight:700,color:"#e2e8f0",textAlign:"right"}}>{label}:</label>
+              <input value={val} onChange={e=>set(e.target.value)} style={fieldInp}/>
+            </div>
+          ))}
+        </div>
+
+        {/* Maintenance Notes */}
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:13,fontWeight:800,color:"var(--text-primary)",borderBottom:"2px solid var(--border-bright)",paddingBottom:6,marginBottom:10}}>
+            Vehicle Maintenance / Repair Notes (to be filled by Workshop Incharge):
+          </div>
+          <textarea value={maintenanceNotes} onChange={e=>setMaintenanceNotes(e.target.value)} placeholder="Enter maintenance/repair notes..."
+            style={{width:"100%",background:"var(--bg-elevated)",border:"1px solid var(--border-bright)",borderRadius:8,padding:"10px 12px",color:"#e2e8f0",fontSize:13,fontFamily:"var(--font-body)",minHeight:100,resize:"vertical",outline:"none"}}/>
+        </div>
+
+        {/* Action Required */}
+        <div style={{marginBottom:20,padding:"12px 16px",background:"var(--bg-elevated)",borderRadius:10,border:"1px solid var(--border-bright)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:10}}>Action Required for Returned Part(s):</div>
+          <div style={{display:"flex",gap:20,flexWrap:"wrap",alignItems:"center"}}>
+            {["Repair","Scrap","Re-Issue","Others"].map(a=>(
+              <label key={a} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",color:"var(--text-secondary)",fontSize:13,fontWeight:600}}>
+                <input type="checkbox" checked={actionRequired.includes(a)} onChange={()=>toggleAction(a)}
+                  style={{width:16,height:16,accentColor:"var(--accent)",cursor:"pointer"}}/>
+                {a}
+              </label>
+            ))}
+            {actionRequired.includes("Others")&&(
+              <input value={othersSpecify} onChange={e=>setOthersSpecify(e.target.value)} placeholder="Specify..."
+                style={{...fieldInp,width:180}}/>
+            )}
+          </div>
+        </div>
+
+        {/* Signatures */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:20,marginTop:8}}>
+          {[
+            {label:"Mechanic Incharge", val:mechanicIncharge, set:setMechanicIncharge},
+            {label:"Approved By Admin & Procurement Head Sign", val:approvedBy, set:setApprovedBy},
+            {label:"Workshop Incharge", val:workshopIncharge, set:setWorkshopIncharge},
+          ].map(({label,val,set})=>(
+            <div key={label} style={{textAlign:"center"}}>
+              <div style={{height:36}}/>
+              <div style={{borderTop:"1px solid var(--border-bright)",paddingTop:8,fontSize:13,fontWeight:700,color:"var(--text-primary)"}}>{label}</div>
+              <input value={val} onChange={e=>set(e.target.value)} placeholder="Name..." style={{...fieldInp,textAlign:"center",marginTop:4}}/>
+            </div>
+          ))}
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+function ReportsPage() {
+  const [activeReport, setActiveReport] = useState(null);
+
+  const reportOptions = [
+    {id:"vendors",     label:"Search By Vendors",          icon:"users",     color:"#f5a623", desc:"View repair & maintenance records grouped by vendor"},
+    {id:"parts",       label:"Search By Parts",            icon:"package",   color:"#4f8ef7", desc:"Look up all repair history for a specific part"},
+    {id:"summary",     label:"Summary Vendor Wise",        icon:"chart",     color:"#34d399", desc:"Cost summary and totals grouped by each vendor"},
+    {id:"repairdetail",label:"Parts Repair Details",       icon:"wrench",    color:"#a78bfa", desc:"Full details of all parts sent for repair"},
+    {id:"underrepair", label:"Parts Under Repair Details", icon:"clock",     color:"#f87171", desc:"Parts currently at vendor and not yet received"},
+  ];
+
+  if(activeReport) {
+    const opt = reportOptions.find(r=>r.id===activeReport);
+    return (
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:24}}>
+          <button onClick={()=>setActiveReport(null)}
+            style={{background:"var(--bg-elevated)",border:"1px solid var(--border-bright)",borderRadius:8,padding:"7px 14px",cursor:"pointer",color:"var(--text-secondary)",fontSize:13,fontFamily:"var(--font-body)",fontWeight:600,display:"flex",alignItems:"center",gap:6,transition:"all 0.15s"}}
+            onMouseEnter={e=>{e.currentTarget.style.color="var(--text-primary)";e.currentTarget.style.background="var(--bg-hover)";}}
+            onMouseLeave={e=>{e.currentTarget.style.color="var(--text-secondary)";e.currentTarget.style.background="var(--bg-elevated)";}}>
+            ← Back
+          </button>
+          <div style={{width:2,height:20,background:"var(--border-bright)",borderRadius:2}}/>
+          <PageHeading title={opt.label} sub="R & M Vendors Ledger"/>
+        </div>
+        {activeReport==="vendors"      && <VendorsLedgerReport/>}
+        {activeReport==="parts"        && <PartsLedgerReport/>}
+        {activeReport==="summary"      && <SummaryVendorWiseReport/>}
+        {activeReport==="repairdetail" && <PartsRepairDetailsReport/>}
+        {activeReport==="underrepair"  && <PartsUnderRepairReport/>}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <PageHeading title="Repair & Maintenance Reports" sub="Select a report to view"/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16,marginTop:8}}>
+        {reportOptions.map((r,i)=>(
+          <div key={r.id} onClick={()=>setActiveReport(r.id)}
+            style={{
+              background:"var(--bg-card)",border:`1px solid var(--border)`,borderRadius:16,padding:24,
+              cursor:"pointer",transition:"all 0.2s ease",animationDelay:`${i*0.07}s`,
+              animation:"fadeUp 0.4s ease both",position:"relative",overflow:"hidden",
+            }}
+            onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-4px)";e.currentTarget.style.borderColor=r.color+"66";e.currentTarget.style.boxShadow=`0 12px 40px rgba(0,0,0,0.4), 0 0 0 1px ${r.color}22`;}}
+            onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.boxShadow="";}}>
+            <div style={{position:"absolute",bottom:0,left:0,right:0,height:2,background:`linear-gradient(90deg,transparent,${r.color},transparent)`,opacity:0.6}}/>
+            <div style={{width:46,height:46,borderRadius:12,background:`${r.color}18`,border:`1px solid ${r.color}35`,display:"flex",alignItems:"center",justifyContent:"center",color:r.color,marginBottom:14}}>
+              <Icon name={r.icon} size={22}/>
+            </div>
+            <div style={{fontSize:15,fontWeight:800,color:"var(--text-primary)",fontFamily:"var(--font-display)",marginBottom:6}}>{r.label}</div>
+            <div style={{fontSize:12.5,color:"var(--text-muted)",lineHeight:1.5}}>{r.desc}</div>
+            <div style={{marginTop:14,display:"flex",alignItems:"center",gap:5,fontSize:12,color:r.color,fontWeight:700}}>
+              View Report <Icon name="arrow_right" size={13}/>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PartsUnderRepairReport() {
+  const [repair, setRepair] = useState([]);
+  const [movements, setMovements] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(()=>{
+    Promise.all([load('repair'),load('movements')]).then(([r,m])=>{
+      setRepair(r); setMovements(m); setLoading(false);
+    });
+  },[]);
+
+  const cols = [
+    {key:"sno",label:"S.No"},
+    {key:"repairVendorName",label:"Vendor Name"},
+    {key:"vehicleGroup",label:"Vehicle Group"},
+    {key:"vehicleNo",label:"Vehicle No"},
+    {key:"partName",label:"Part Description"},
+    {key:"partId",label:"Part ID"},
+    {key:"partSerialNo",label:"Part Serial No"},
+    {key:"remarks",label:"Remarks"},
+  ];
+
+  const filtered = useMemo(()=>{
+    const underRepair = repair.filter(r=>
+      r.partStatus!=="Received after repair" && r.partStatus!=="Received without repair"
+    ).map(r=>({...r, remarks: r.partStatus||""}));
+    if(!search.trim()) return underRepair;
+    const q = search.toLowerCase();
+    return underRepair.filter(r=>
+      [r.repairVendorName,r.vehicleGroup,r.vehicleNo,r.partName,r.partId,r.partSerialNo].some(f=>(f||"").toLowerCase().includes(q))
+    );
+  },[repair,movements,search]);
+
+  if(loading) return <Skeleton/>;
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:14,marginBottom:20,flexWrap:"wrap"}}>
+        <StatCard label="Parts Under Repair" value={filtered.length} icon="wrench" color="#f87171"/>
+      </div>
+
+      <div style={{marginBottom:16,display:"flex",gap:12,alignItems:"center"}}>
+        <div style={{position:"relative",flex:1,maxWidth:400}}>
+          <Icon name="search" size={16} style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"var(--text-muted)"}}/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search vendor, vehicle, part..."
+            className="search-input"
+            style={{width:"100%",padding:"9px 12px 9px 40px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
+        </div>
+        <button onClick={()=>exportCSV(filtered.map((r,i)=>({...r,sno:i+1})),cols,"parts-under-repair.csv")} className="action-btn-secondary" style={{fontSize:12}}>
+          <Icon name="download" size={13}/> Export CSV
+        </button>
+      </div>
+
+      <div className="table-wrapper">
+        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh"}} className="scrollbar-dark">
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead>
+              <tr>{cols.map(c=><Th key={c.key}>{c.label}</Th>)}</tr>
+            </thead>
+            <tbody>
+              {filtered.length===0&&(
+                <tr><td colSpan={cols.length} style={{padding:32,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No parts currently under repair.</td></tr>
+              )}
+              {filtered.map((r,i)=>(
+                <tr key={r.id||i}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"}
+                  onMouseLeave={e=>e.currentTarget.style.background=""}>
+                  <SnoTd>{i+1}</SnoTd>
+                  <Td style={{color:"var(--text-primary)",fontWeight:700}}>{r.repairVendorName||"—"}</Td>
+                  <Td>{r.vehicleGroup||"—"}</Td>
+                  <Td style={{color:"var(--accent)",fontWeight:700}}>{r.vehicleNo||"—"}</Td>
+                  <Td style={{color:"var(--text-primary)",fontWeight:500}}>{r.partName||"—"}</Td>
+                  <Td style={{color:"var(--text-secondary)"}}>{r.partId||"—"}</Td>
+                  <Td style={{color:"var(--text-secondary)"}}>{r.partSerialNo||"—"}</Td>
+                  <Td style={{color:"var(--text-muted)"}}>{r.remarks||"—"}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{padding:"9px 16px",borderTop:"1px solid var(--border)",fontSize:12,color:"var(--text-muted)"}}>
+          {filtered.length} part{filtered.length!==1?"s":""} under repair
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PartsRepairDetailsReport() {
+  const [repair, setRepair] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(()=>{
+    load('repair').then(d=>{ setRepair(d); setLoading(false); });
+  },[]);
+
+  const cols = [
+    {key:"sno",label:"S.No"},
+    {key:"repairVendorName",label:"Vendor Name"},
+    {key:"vehicleGroup",label:"Vehicle Group"},
+    {key:"vehicleNo",label:"Vehicle No"},
+    {key:"partName",label:"Part Description"},
+    {key:"partId",label:"Part ID"},
+    {key:"partSerialNo",label:"Part Serial No"},
+    {key:"dateSent",label:"Repair Date"},
+    {key:"repairCost",label:"Repair Cost"},
+  ];
+
+  const filtered = useMemo(()=>{
+    if(!search.trim()) return repair;
+    const q = search.toLowerCase();
+    return repair.filter(r=>
+      [r.repairVendorName,r.vehicleGroup,r.vehicleNo,r.partName,r.partId,r.partSerialNo].some(f=>(f||"").toLowerCase().includes(q))
+    );
+  },[repair,search]);
+
+  const totalCost = filtered.reduce((s,r)=>s+(Number(r.repairCost)||0),0);
+
+  if(loading) return <Skeleton/>;
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:14,marginBottom:20,flexWrap:"wrap"}}>
+        <StatCard label="Total Records" value={filtered.length} icon="clipboard" color="#4f8ef7"/>
+        <StatCard label="Total Repair Cost" value={`PKR ${totalCost.toLocaleString()}`} icon="chart" color="#f5a623"/>
+      </div>
+
+      <div style={{marginBottom:16,display:"flex",gap:12,alignItems:"center"}}>
+        <div style={{position:"relative",flex:1,maxWidth:400}}>
+          <Icon name="search" size={16} style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"var(--text-muted)"}}/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search vendor, vehicle, part..."
+            className="search-input"
+            style={{width:"100%",padding:"9px 12px 9px 40px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
+        </div>
+        <button onClick={()=>exportCSV(filtered.map((r,i)=>({...r,sno:i+1})),cols,"parts-repair-details.csv")} className="action-btn-secondary" style={{fontSize:12}}>
+          <Icon name="download" size={13}/> Export CSV
+        </button>
+      </div>
+
+      <div className="table-wrapper">
+        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh"}} className="scrollbar-dark">
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead>
+              <tr>{cols.map(c=><Th key={c.key}>{c.label}</Th>)}</tr>
+            </thead>
+            <tbody>
+              {filtered.length===0&&(
+                <tr><td colSpan={cols.length} style={{padding:32,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No records found.</td></tr>
+              )}
+              {filtered.map((r,i)=>(
+                <tr key={r.id||i}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"}
+                  onMouseLeave={e=>e.currentTarget.style.background=""}>
+                  <SnoTd>{i+1}</SnoTd>
+                  <Td style={{color:"var(--text-primary)",fontWeight:700}}>{r.repairVendorName||"—"}</Td>
+                  <Td>{r.vehicleGroup||"—"}</Td>
+                  <Td style={{color:"var(--accent)",fontWeight:700}}>{r.vehicleNo||"—"}</Td>
+                  <Td style={{color:"var(--text-primary)",fontWeight:500}}>{r.partName||"—"}</Td>
+                  <Td style={{color:"var(--text-secondary)"}}>{r.partId||"—"}</Td>
+                  <Td style={{color:"var(--text-secondary)"}}>{r.partSerialNo||"—"}</Td>
+                  <Td>{r.dateSent||"—"}</Td>
+                  <Td style={{color:r.repairCost?"var(--accent)":"var(--text-muted)",fontWeight:r.repairCost?700:400}}>
+                    {r.repairCost?`PKR ${Number(r.repairCost).toLocaleString()}`:"—"}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{padding:"9px 16px",borderTop:"1px solid var(--border)",fontSize:12,color:"var(--text-muted)",display:"flex",justifyContent:"space-between"}}>
+          <span>{filtered.length} record{filtered.length!==1?"s":""}</span>
+          <span>Total: <span style={{color:"var(--accent)",fontWeight:700}}>PKR {totalCost.toLocaleString()}</span></span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SummaryVendorWiseReport() {
+  const [repair, setRepair] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(()=>{
+    load('repair').then(d=>{ setRepair(d); setLoading(false); });
+  },[]);
+
+  const cols = [
+    {key:"sno",label:"S.No"},
+    {key:"vendorName",label:"Vendor Name"},
+    {key:"underRepair",label:"Parts Under Repair"},
+    {key:"repaired",label:"Parts Repaired"},
+    {key:"totalCost",label:"Total Repairing Cost"},
+  ];
+
+  const summaryRows = useMemo(()=>{
+    const map = {};
+    repair.forEach(r=>{
+      const v = r.repairVendorName||"Unknown";
+      if(!map[v]) map[v] = {vendorName:v, underRepair:0, repaired:0, totalCost:0};
+      const received = r.partStatus==="Received after repair"||r.partStatus==="Received without repair";
+      if(received) map[v].repaired++;
+      else map[v].underRepair++;
+      map[v].totalCost += Number(r.repairCost)||0;
+    });
+    return Object.values(map).sort((a,b)=>b.totalCost-a.totalCost);
+  },[repair]);
+
+  const filtered = useMemo(()=>{
+    if(!search.trim()) return summaryRows;
+    return summaryRows.filter(r=>r.vendorName.toLowerCase().includes(search.toLowerCase()));
+  },[summaryRows,search]);
+
+  const grandTotal = filtered.reduce((s,r)=>s+r.totalCost,0);
+  const grandUnder = filtered.reduce((s,r)=>s+r.underRepair,0);
+  const grandRepaired = filtered.reduce((s,r)=>s+r.repaired,0);
+
+  if(loading) return <Skeleton/>;
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:14,marginBottom:20,flexWrap:"wrap"}}>
+        <StatCard label="Total Vendors" value={filtered.length} icon="users" color="#34d399"/>
+        <StatCard label="Parts Under Repair" value={grandUnder} icon="wrench" color="#f87171"/>
+        <StatCard label="Parts Repaired" value={grandRepaired} icon="check" color="#4f8ef7"/>
+        <StatCard label="Total Repair Cost" value={`PKR ${grandTotal.toLocaleString()}`} icon="chart" color="#f5a623"/>
+      </div>
+
+      <div style={{marginBottom:16,display:"flex",gap:12,alignItems:"center"}}>
+        <div style={{position:"relative",flex:1,maxWidth:400}}>
+          <Icon name="search" size={16} style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"var(--text-muted)"}}/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search vendor name..."
+            className="search-input"
+            style={{width:"100%",padding:"9px 12px 9px 40px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
+        </div>
+        <button onClick={()=>exportCSV(filtered.map((r,i)=>({...r,sno:i+1,totalCost:`PKR ${r.totalCost.toLocaleString()}`})),cols,"summary-vendor-wise.csv")} className="action-btn-secondary" style={{fontSize:12}}>
+          <Icon name="download" size={13}/> Export CSV
+        </button>
+      </div>
+
+      <div className="table-wrapper">
+        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"60vh"}} className="scrollbar-dark">
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead>
+              <tr>{cols.map(c=><Th key={c.key}>{c.label}</Th>)}</tr>
+            </thead>
+            <tbody>
+              {filtered.length===0&&(
+                <tr><td colSpan={cols.length} style={{padding:32,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No records found.</td></tr>
+              )}
+              {filtered.map((r,i)=>(
+                <tr key={r.vendorName}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"}
+                  onMouseLeave={e=>e.currentTarget.style.background=""}>
+                  <SnoTd>{i+1}</SnoTd>
+                  <Td style={{color:"var(--text-primary)",fontWeight:700}}>{r.vendorName}</Td>
+                  <Td style={{textAlign:"center"}}>
+                    <span style={{background:"rgba(248,113,113,0.15)",color:"var(--red)",border:"1px solid rgba(248,113,113,0.35)",borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700}}>
+                      {r.underRepair}
+                    </span>
+                  </Td>
+                  <Td style={{textAlign:"center"}}>
+                    <span style={{background:"rgba(52,211,153,0.15)",color:"var(--green)",border:"1px solid rgba(52,211,153,0.35)",borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700}}>
+                      {r.repaired}
+                    </span>
+                  </Td>
+                  <Td style={{color:"var(--accent)",fontWeight:700}}>
+                    PKR {r.totalCost.toLocaleString()}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{padding:"9px 16px",borderTop:"1px solid var(--border)",fontSize:12,color:"var(--text-muted)",display:"flex",justifyContent:"space-between"}}>
+          <span>{filtered.length} vendor{filtered.length!==1?"s":""}</span>
+          <span>Grand Total: <span style={{color:"var(--accent)",fontWeight:700}}>PKR {grandTotal.toLocaleString()}</span></span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PartsLedgerReport() {
+  const [repair, setRepair] = useState([]);
+  const [movements, setMovements] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(()=>{
+    Promise.all([load('repair'),load('movements')]).then(([r,m])=>{
+      setRepair(r); setMovements(m); setLoading(false);
+    });
+  },[]);
+
+  const parts = useMemo(()=>{
+    const set = new Set(repair.map(r=>r.partName).filter(Boolean));
+    return [...set].sort();
+  },[repair]);
+
+  const filteredParts = useMemo(()=>{
+    if(!search.trim()) return parts;
+    return parts.filter(v=>v.toLowerCase().includes(search.toLowerCase()));
+  },[parts,search]);
+
+  const cols = [
+    {key:"sno",label:"S.No"},
+    {key:"vehicleGroup",label:"Vehicle Group"},
+    {key:"vehicleNo",label:"Vehicle No"},
+    {key:"code",label:"Item Code"},
+    {key:"partId",label:"Part ID"},
+    {key:"partSerialNo",label:"Part Serial No"},
+    {key:"qtyRepaired",label:"Qty"},
+    {key:"repairVendorName",label:"Vendor Name"},
+    {key:"dateSent",label:"Date Sent"},
+    {key:"ogpNo",label:"OGP #"},
+    {key:"dateReceived",label:"Date Received"},
+    {key:"igpNo",label:"IGP #"},
+    {key:"repairDuration",label:"Duration (Days)"},
+    {key:"repairCost",label:"Repairing Cost"},
+    {key:"remarks",label:"Remarks"},
+  ];
+
+  const getPartRows = (partName) =>
+    repair.filter(r=>r.partName===partName).map(r=>({...r, remarks: r.partStatus||""}));
+
+  const exportPartCSV = (partName) => {
+    const rows = getPartRows(partName).map((r,i)=>({...r,sno:i+1}));
+    exportCSV(rows, cols, `ledger-part-${partName}.csv`);
+  };
+
+  if(loading) return <Skeleton/>;
+
+  return (
+    <div>
+      <div style={{marginBottom:20,display:"flex",gap:12,alignItems:"center"}}>
+        <div style={{position:"relative",flex:1,maxWidth:400}}>
+          <Icon name="search" size={16} style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"var(--text-muted)"}}/>
+          <input
+            value={search}
+            onChange={e=>setSearch(e.target.value)}
+            placeholder="Search part name..."
+            className="search-input"
+            style={{width:"100%",padding:"9px 12px 9px 40px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}
+          />
+        </div>
+        <div style={{fontSize:13,color:"var(--text-muted)"}}>
+          {filteredParts.length} part{filteredParts.length!==1?"s":""}
+        </div>
+      </div>
+
+      {filteredParts.length===0&&(
+        <div style={{textAlign:"center",padding:48,color:"var(--text-muted)",fontSize:14}}>
+          {parts.length===0?"No repair records found.":"No parts match your search."}
+        </div>
+      )}
+
+      {filteredParts.map(partName=>{
+        const rows = getPartRows(partName);
+        const totalCost = rows.reduce((s,r)=>s+(Number(r.repairCost)||0),0);
+        return (
+          <div key={partName} style={{marginBottom:32}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <div style={{width:36,height:36,borderRadius:10,background:"var(--blue-dim)",border:"1px solid rgba(79,142,247,0.3)",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--blue)"}}>
+                  <Icon name="package" size={17}/>
+                </div>
+                <div>
+                  <div style={{fontSize:16,fontWeight:800,color:"var(--text-primary)",fontFamily:"var(--font-display)"}}>{partName}</div>
+                  <div style={{fontSize:12,color:"var(--text-muted)",marginTop:2}}>
+                    {rows.length} record{rows.length!==1?"s":""} &nbsp;·&nbsp;
+                    Total Cost: <span style={{color:"var(--accent)",fontWeight:700}}>PKR {totalCost.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+              <button onClick={()=>exportPartCSV(partName)} className="action-btn-secondary" style={{fontSize:12}}>
+                <Icon name="download" size={13}/> Export CSV
+              </button>
+            </div>
+
+            <div className="table-wrapper">
+              <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"50vh"}} className="scrollbar-dark">
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead>
+                    <tr>{cols.map(c=><Th key={c.key}>{c.label}</Th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {rows.length===0&&(
+                      <tr><td colSpan={cols.length} style={{padding:24,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No records for this part.</td></tr>
+                    )}
+                    {rows.map((r,i)=>(
+                      <tr key={r.id||i}
+                        onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"}
+                        onMouseLeave={e=>e.currentTarget.style.background=""}>
+                        <SnoTd>{i+1}</SnoTd>
+                        <Td>{r.vehicleGroup||"—"}</Td>
+                        <Td style={{color:"var(--accent)",fontWeight:700}}>{r.vehicleNo||"—"}</Td>
+                        <Td><code style={{fontSize:11.5,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)",border:"1px solid rgba(34,211,238,0.2)"}}>{r.code||"—"}</code></Td>
+                        <Td style={{color:"var(--text-secondary)"}}>{r.partId||"—"}</Td>
+                        <Td style={{color:"var(--text-secondary)"}}>{r.partSerialNo||"—"}</Td>
+                        <Td style={{textAlign:"center"}}>{r.qtyRepaired||"—"}</Td>
+                        <Td style={{color:"var(--text-primary)"}}>{r.repairVendorName||"—"}</Td>
+                        <Td>{r.dateSent||"—"}</Td>
+                        <Td style={{color:"var(--cyan)",fontWeight:600}}>{r.ogpNo||"—"}</Td>
+                        <Td>{r.dateReceived||"—"}</Td>
+                        <Td style={{color:"var(--cyan)",fontWeight:600}}>{r.igpNo||"—"}</Td>
+                        <Td style={{textAlign:"center"}}>{r.repairDuration||"—"}</Td>
+                        <Td style={{color:r.repairCost?"var(--accent)":"var(--text-muted)",fontWeight:r.repairCost?700:400}}>
+                          {r.repairCost?`PKR ${Number(r.repairCost).toLocaleString()}`:"—"}
+                        </Td>
+                        <Td style={{color:"var(--text-muted)"}}>{r.remarks||"—"}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{padding:"9px 16px",borderTop:"1px solid var(--border)",fontSize:12,color:"var(--text-muted)",display:"flex",justifyContent:"space-between"}}>
+                <span>{rows.length} record{rows.length!==1?"s":""}</span>
+                <span>Total: <span style={{color:"var(--accent)",fontWeight:700}}>PKR {totalCost.toLocaleString()}</span></span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function VendorsLedgerReport() {
+  const [repair, setRepair] = useState([]);
+  const [movements, setMovements] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(()=>{
+    Promise.all([load('repair'),load('movements')]).then(([r,m])=>{
+      setRepair(r); setMovements(m); setLoading(false);
+    });
+  },[]);
+
+  const vendors = useMemo(()=>{
+    const set = new Set(repair.map(r=>r.repairVendorName).filter(Boolean));
+    return [...set].sort();
+  },[repair]);
+
+  const filteredVendors = useMemo(()=>{
+    if(!search.trim()) return vendors;
+    return vendors.filter(v=>v.toLowerCase().includes(search.toLowerCase()));
+  },[vendors,search]);
+
+  const cols = [
+    {key:"sno",label:"S.No"},
+    {key:"vehicleGroup",label:"Vehicle Group"},
+    {key:"vehicleNo",label:"Vehicle No"},
+    {key:"code",label:"Item Code"},
+    {key:"partName",label:"Part Description"},
+    {key:"partId",label:"Part ID"},
+    {key:"partSerialNo",label:"Part Serial No"},
+    {key:"qtyRepaired",label:"Qty"},
+    {key:"dateSent",label:"Date Sent"},
+    {key:"ogpNo",label:"OGP #"},
+    {key:"dateReceived",label:"Date Received"},
+    {key:"igpNo",label:"IGP #"},
+    {key:"repairDuration",label:"Duration (Days)"},
+    {key:"repairCost",label:"Repairing Cost"},
+    {key:"remarks",label:"Remarks"},
+  ];
+
+  const getVendorRows = (vendorName) =>
+    repair.filter(r=>r.repairVendorName===vendorName).map(r=>({...r, remarks: r.partStatus||""}));
+
+  const exportVendorCSV = (vendorName) => {
+    const rows = getVendorRows(vendorName).map((r,i)=>({...r,sno:i+1}));
+    const exportCols = cols.filter(c=>c.key!=="sno").map(c=>({...c}));
+    exportCSV(rows, [{key:"sno",label:"S.No"},...exportCols], `ledger-${vendorName}.csv`);
+  };
+
+  if(loading) return <Skeleton/>;
+
+  return (
+    <div>
+      {/* Search bar */}
+      <div style={{marginBottom:20,display:"flex",gap:12,alignItems:"center"}}>
+        <div style={{position:"relative",flex:1,maxWidth:400}}>
+          <Icon name="search" size={16} style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"var(--text-muted)"}}/>
+          <input
+            value={search}
+            onChange={e=>setSearch(e.target.value)}
+            placeholder="Search vendor name..."
+            className="search-input"
+            style={{width:"100%",padding:"9px 12px 9px 40px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}
+          />
+        </div>
+        <div style={{fontSize:13,color:"var(--text-muted)"}}>
+          {filteredVendors.length} vendor{filteredVendors.length!==1?"s":""}
+        </div>
+      </div>
+
+      {filteredVendors.length===0 && (
+        <div style={{textAlign:"center",padding:48,color:"var(--text-muted)",fontSize:14}}>
+          {vendors.length===0 ? "No repair records found." : "No vendors match your search."}
+        </div>
+      )}
+
+      {/* One table per vendor */}
+      {filteredVendors.map(vendorName=>{
+        const rows = getVendorRows(vendorName);
+        const totalCost = rows.reduce((s,r)=>s+(Number(r.repairCost)||0),0);
+        return (
+          <div key={vendorName} style={{marginBottom:32}}>
+            {/* Vendor header */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <div style={{width:36,height:36,borderRadius:10,background:"var(--accent-dim)",border:"1px solid var(--accent-glow)",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--accent)"}}>
+                  <Icon name="users" size={17}/>
+                </div>
+                <div>
+                  <div style={{fontSize:16,fontWeight:800,color:"var(--text-primary)",fontFamily:"var(--font-display)"}}>{vendorName}</div>
+                  <div style={{fontSize:12,color:"var(--text-muted)",marginTop:2}}>
+                    {rows.length} record{rows.length!==1?"s":""} &nbsp;·&nbsp;
+                    Total Cost: <span style={{color:"var(--accent)",fontWeight:700}}>PKR {totalCost.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+              <button onClick={()=>exportVendorCSV(vendorName)} className="action-btn-secondary" style={{fontSize:12}}>
+                <Icon name="download" size={13}/> Export CSV
+              </button>
+            </div>
+
+            <div className="table-wrapper">
+              <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"50vh"}} className="scrollbar-dark">
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead>
+                    <tr>
+                      {cols.map(c=><Th key={c.key}>{c.label}</Th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.length===0&&(
+                      <tr><td colSpan={cols.length} style={{padding:24,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No records for this vendor.</td></tr>
+                    )}
+                    {rows.map((r,i)=>(
+                      <tr key={r.id||i}
+                        onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"}
+                        onMouseLeave={e=>e.currentTarget.style.background=""}>
+                        <SnoTd>{i+1}</SnoTd>
+                        <Td>{r.vehicleGroup||"—"}</Td>
+                        <Td style={{color:"var(--accent)",fontWeight:700}}>{r.vehicleNo||"—"}</Td>
+                        <Td><code style={{fontSize:11.5,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)",border:"1px solid rgba(34,211,238,0.2)"}}>{r.code||"—"}</code></Td>
+                        <Td style={{color:"var(--text-primary)",fontWeight:500}}>{r.partName||"—"}</Td>
+                        <Td style={{color:"var(--text-secondary)"}}>{r.partId||"—"}</Td>
+                        <Td style={{color:"var(--text-secondary)"}}>{r.partSerialNo||"—"}</Td>
+                        <Td style={{textAlign:"center"}}>{r.qtyRepaired||"—"}</Td>
+                        <Td>{r.dateSent||"—"}</Td>
+                        <Td style={{color:"var(--cyan)",fontWeight:600}}>{r.ogpNo||"—"}</Td>
+                        <Td>{r.dateReceived||"—"}</Td>
+                        <Td style={{color:"var(--cyan)",fontWeight:600}}>{r.igpNo||"—"}</Td>
+                        <Td style={{textAlign:"center"}}>{r.repairDuration||"—"}</Td>
+                        <Td style={{color:r.repairCost?"var(--accent)":"var(--text-muted)",fontWeight:r.repairCost?700:400}}>
+                          {r.repairCost?`PKR ${Number(r.repairCost).toLocaleString()}`:"—"}
+                        </Td>
+                        <Td style={{color:"var(--text-muted)"}}>{r.partStatus||"—"}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{padding:"9px 16px",borderTop:"1px solid var(--border)",fontSize:12,color:"var(--text-muted)",display:"flex",justifyContent:"space-between"}}>
+                <span>{rows.length} record{rows.length!==1?"s":""}</span>
+                <span>Total: <span style={{color:"var(--accent)",fontWeight:700}}>PKR {totalCost.toLocaleString()}</span></span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SearchSection({title,count,children,color="var(--blue)"}) {
   return (
     <div style={{marginBottom:22}}>
