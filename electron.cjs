@@ -8,6 +8,9 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256')
 app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
 
+let mainWindow
+let downloadWindow = null
+
 function createSplash() {
   const splash = new BrowserWindow({
     width: 420,
@@ -19,7 +22,6 @@ function createSplash() {
     skipTaskbar: true,
     webPreferences: { nodeIntegration: false }
   })
-
   splash.loadURL(`data:text/html,
     <html>
     <body style="margin:0;background:#0d0f14;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;border-radius:16px;overflow:hidden;">
@@ -51,11 +53,9 @@ function createSplash() {
     </body>
     </html>
   `)
-
   return splash
 }
 
-let mainWindow;
 function createWindow(splash) {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -71,11 +71,9 @@ function createWindow(splash) {
     },
     title: 'VPM Tracker',
   })
-
   const indexPath = path.join(__dirname, 'dist', 'index.html')
   mainWindow.loadURL(`file:///${indexPath.replace(/\\/g, '/')}`)
   mainWindow.setMenuBarVisibility(false)
-
   mainWindow.once('ready-to-show', () => {
     setTimeout(() => {
       if (splash && !splash.isDestroyed()) splash.destroy()
@@ -83,38 +81,55 @@ function createWindow(splash) {
       mainWindow.focus()
     }, 300)
   })
-
   return mainWindow
 }
-setTimeout(() => {
-  const { BrowserWindow } = require('electron')
-  downloadWindow = new BrowserWindow({
-    width: 420,
-    height: 220,
-    resizable: false,
-    frame: false,
-    alwaysOnTop: true,
-    center: true,
-    backgroundColor: '#0d0f14',
-    webPreferences: { nodeIntegration: false, contextIsolation: true }
-  })
-  downloadWindow.loadURL(`data:text/html,<html>...your download window HTML...</html>`)
-}, 3000)
+
+const downloadHTML = `
+  <html>
+  <body style="margin:0;background:#0d0f14;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#f0f2f8;">
+    <div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#f5a623,#e8920a);display:flex;align-items:center;justify-content:center;margin-bottom:16px;box-shadow:0 8px 24px rgba(245,166,35,0.4);">
+      <svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%230d0f14' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'>
+        <path d='M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4'/>
+      </svg>
+    </div>
+    <div style="font-size:16px;font-weight:800;margin-bottom:6px;">Downloading Update</div>
+    <div id="pct" style="font-size:13px;color:#f5a623;font-weight:700;margin-bottom:16px;">0%</div>
+    <div style="width:280px;height:6px;background:#1f2332;border-radius:10px;overflow:hidden;">
+      <div id="bar" style="height:100%;width:0%;background:linear-gradient(90deg,#f5a623,#e8920a);border-radius:10px;transition:width 0.3s ease;"></div>
+    </div>
+    <div id="speed" style="font-size:11px;color:#4f5869;margin-top:10px;">Preparing download...</div>
+    <script>
+      let progress = 0;
+      const bar = document.getElementById('bar');
+      const pct = document.getElementById('pct');
+      const speed = document.getElementById('speed');
+      setInterval(() => {
+        if(progress < 95) {
+          progress += Math.random() * 3;
+          bar.style.width = Math.min(progress, 95) + '%';
+          pct.textContent = Math.round(Math.min(progress, 95)) + '%';
+          speed.textContent = 'Downloading update, please wait...';
+        }
+      }, 400);
+    </script>
+  </body>
+  </html>
+`
 
 app.whenReady().then(() => {
   const splash = createSplash()
   createWindow(splash)
   autoUpdater.autoDownload = false
-autoUpdater.checkForUpdates()
+  autoUpdater.checkForUpdates()
 })
-let downloadWindow = null;
+
 autoUpdater.on('update-available', (info) => {
-  const { dialog, BrowserWindow } = require('electron')
+  const { dialog } = require('electron')
   dialog.showMessageBox({
     type: 'info',
     title: 'Update Available',
     message: `Version ${info.version} is available!`,
-    detail: 'Click Download to get the latest update.',
+    detail: 'Click Download Now to get the latest update.',
     buttons: ['Download Now', 'Later'],
     defaultId: 0,
   }).then(result => {
@@ -130,46 +145,16 @@ autoUpdater.on('update-available', (info) => {
         backgroundColor: '#0d0f14',
         webPreferences: { nodeIntegration: false, contextIsolation: true }
       })
-      downloadWindow.loadURL(`data:text/html,
-        <html>
-        <body style="margin:0;background:#0d0f14;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#f0f2f8;">
-          <div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#f5a623,#e8920a);display:flex;align-items:center;justify-content:center;margin-bottom:16px;box-shadow:0 8px 24px rgba(245,166,35,0.4);">
-            <svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%230d0f14' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'>
-              <path d='M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4'/>
-            </svg>
-          </div>
-          <div style="font-size:16px;font-weight:800;margin-bottom:6px;">Downloading Update</div>
-          <div id="pct" style="font-size:13px;color:#f5a623;font-weight:700;margin-bottom:16px;">0%</div>
-          <div style="width:280px;height:6px;background:#1f2332;border-radius:10px;overflow:hidden;">
-            <div id="bar" style="height:100%;width:0%;background:linear-gradient(90deg,#f5a623,#e8920a);border-radius:10px;transition:width 0.3s ease;"></div>
-          </div>
-          <div id="speed" style="font-size:11px;color:#4f5869;margin-top:10px;">Preparing download...</div>
-          <script>
-            let progress = 0;
-            const bar = document.getElementById('bar');
-            const pct = document.getElementById('pct');
-            const speed = document.getElementById('speed');
-            const interval = setInterval(() => {
-              if(progress < 95) {
-                progress += Math.random() * 3;
-                bar.style.width = Math.min(progress, 95) + '%';
-                pct.textContent = Math.round(Math.min(progress, 95)) + '%';
-                speed.textContent = 'Downloading update, please wait...';
-              }
-            }, 400);
-          </script>
-        </body>
-        </html>
-      `)
+      downloadWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(downloadHTML))
       autoUpdater.downloadUpdate()
     }
   })
 })
 
 autoUpdater.on('update-downloaded', () => {
-  if (mainWindow) {
-    mainWindow.setProgressBar(-1)
-    mainWindow.setTitle('VPM Tracker')
+  if (downloadWindow && !downloadWindow.isDestroyed()) {
+    downloadWindow.close()
+    downloadWindow = null
   }
   const { dialog } = require('electron')
   dialog.showMessageBox({
@@ -188,6 +173,10 @@ autoUpdater.on('update-downloaded', () => {
 })
 
 autoUpdater.on('error', (err) => {
+  if (downloadWindow && !downloadWindow.isDestroyed()) {
+    downloadWindow.close()
+    downloadWindow = null
+  }
   console.error('Update error:', err)
 })
 
