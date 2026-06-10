@@ -4,13 +4,22 @@ directories:
 appId: com.vpm.tracker
 productName: VPM Tracker
 win:
-  target: nsis
+  target:
+    target: nsis
+    arch:
+      - x64
   artifactName: VPM-Tracker-Setup.exe
+compression: maximum
 publish:
   provider: github
   owner: ammar-dev-dev
   repo: vpm-tracker
 extraMetadata:
   main: electron.cjs
-files: []
+files:
+  - filter:
+      - dist/**/*
+      - electron.cjs
+      - public/**/*
+asar: true
 electronVersion: 42.3.3

@@ -1,9 +1,9 @@
 {
   "name": "vpm-tracker",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "main": "electron.cjs",
-  "scripts": {
+  "scripts": {  
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
@@ -37,16 +37,26 @@
     "productName": "VPM Tracker",
     "directories": { "output": "." },
     "win": {
-      "target": "nsis",
-      "artifactName": "VPM-Tracker-Setup.exe"
-    },
+  "target": {
+    "target": "nsis",
+    "arch": ["x64"]
+  },
+  "artifactName": "VPM-Tracker-Setup.exe"
+},
+"compression": "maximum",
     "publish": {
       "provider": "github",
       "owner": "ammar-dev-dev",
       "repo": "vpm-tracker"
     },
     "extraMetadata": {
-      "main": "electron.cjs"
-    }
+  "main": "electron.cjs"
+},
+"files": [
+  "dist/**/*",
+  "electron.cjs",
+  "public/**/*"
+],
+"asar": true
   }
 }

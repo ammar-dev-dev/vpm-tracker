@@ -55,8 +55,9 @@ function createSplash() {
   return splash
 }
 
+let mainWindow;
 function createWindow(splash) {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
@@ -72,18 +73,18 @@ function createWindow(splash) {
   })
 
   const indexPath = path.join(__dirname, 'dist', 'index.html')
-  win.loadURL(`file:///${indexPath.replace(/\\/g, '/')}`)
-  win.setMenuBarVisibility(false)
+  mainWindow.loadURL(`file:///${indexPath.replace(/\\/g, '/')}`)
+  mainWindow.setMenuBarVisibility(false)
 
-  win.once('ready-to-show', () => {
+  mainWindow.once('ready-to-show', () => {
     setTimeout(() => {
       if (splash && !splash.isDestroyed()) splash.destroy()
-      win.show()
-      win.focus()
+      mainWindow.show()
+      mainWindow.focus()
     }, 300)
   })
 
-  return win
+  return mainWindow
 }
 
 app.whenReady().then(() => {
@@ -92,19 +93,57 @@ app.whenReady().then(() => {
   autoUpdater.autoDownload = false
 autoUpdater.checkForUpdates()
 })
-
+let downloadWindow = null;
 autoUpdater.on('update-available', (info) => {
-  const { dialog } = require('electron')
+  const { dialog, BrowserWindow } = require('electron')
   dialog.showMessageBox({
-    type: 'question',
+    type: 'info',
     title: 'Update Available',
-    message: `Version ${info.version} is available`,
-    detail: 'Do you want to download and install the update now?',
+    message: `Version ${info.version} is available!`,
+    detail: 'Click Download to get the latest update.',
     buttons: ['Download Now', 'Later'],
     defaultId: 0,
-    icon: null
   }).then(result => {
     if (result.response === 0) {
+      downloadWindow = new BrowserWindow({
+        width: 420,
+        height: 220,
+        resizable: false,
+        frame: false,
+        alwaysOnTop: true,
+        center: true,
+        skipTaskbar: false,
+        backgroundColor: '#0d0f14',
+        webPreferences: { nodeIntegration: true, contextIsolation: false }
+      })
+      downloadWindow.loadURL(`data:text/html,
+        <html>
+        <body style="margin:0;background:#0d0f14;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#f0f2f8;">
+          <div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#f5a623,#e8920a);display:flex;align-items:center;justify-content:center;margin-bottom:16px;box-shadow:0 8px 24px rgba(245,166,35,0.4);">
+            <svg width='26' height='26' viewBox='0 0 24 24' fill='none' stroke='%230d0f14' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'>
+              <path d='M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4'/>
+            </svg>
+          </div>
+          <div style="font-size:16px;font-weight:800;margin-bottom:6px;">Downloading Update</div>
+          <div id="pct" style="font-size:13px;color:#f5a623;font-weight:700;margin-bottom:16px;">0%</div>
+          <div style="width:280px;height:6px;background:#1f2332;border-radius:10px;overflow:hidden;">
+            <div id="bar" style="height:100%;width:0%;background:linear-gradient(90deg,#f5a623,#e8920a);border-radius:10px;transition:width 0.3s ease;"></div>
+          </div>
+          <div id="speed" style="font-size:11px;color:#4f5869;margin-top:10px;">Preparing download...</div>
+          <script>
+            const { ipcRenderer } = require('electron');
+            ipcRenderer.on('download-progress', (e, data) => {
+              document.getElementById('bar').style.width = data.percent + '%';
+              document.getElementById('pct').textContent = Math.round(data.percent) + '%';
+              const mb = (data.transferred / 1048576).toFixed(1);
+              const total = (data.total / 1048576).toFixed(1);
+              const speed = (data.bytesPerSecond / 1048576).toFixed(1);
+              document.getElementById('speed').textContent = mb + ' MB / ' + total + ' MB  •  ' + speed + ' MB/s';
+            });
+          </script>
+        </body>
+        </html>
+      `)
       autoUpdater.downloadUpdate()
     }
   })
