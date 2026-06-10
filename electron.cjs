@@ -86,6 +86,20 @@ function createWindow(splash) {
 
   return mainWindow
 }
+setTimeout(() => {
+  const { BrowserWindow } = require('electron')
+  downloadWindow = new BrowserWindow({
+    width: 420,
+    height: 220,
+    resizable: false,
+    frame: false,
+    alwaysOnTop: true,
+    center: true,
+    backgroundColor: '#0d0f14',
+    webPreferences: { nodeIntegration: false, contextIsolation: true }
+  })
+  downloadWindow.loadURL(`data:text/html,<html>...your download window HTML...</html>`)
+}, 3000)
 
 app.whenReady().then(() => {
   const splash = createSplash()
@@ -114,7 +128,7 @@ autoUpdater.on('update-available', (info) => {
         center: true,
         skipTaskbar: false,
         backgroundColor: '#0d0f14',
-        webPreferences: { nodeIntegration: true, contextIsolation: false }
+        webPreferences: { nodeIntegration: false, contextIsolation: true }
       })
       downloadWindow.loadURL(`data:text/html,
         <html>
@@ -131,15 +145,18 @@ autoUpdater.on('update-available', (info) => {
           </div>
           <div id="speed" style="font-size:11px;color:#4f5869;margin-top:10px;">Preparing download...</div>
           <script>
-            const { ipcRenderer } = require('electron');
-            ipcRenderer.on('download-progress', (e, data) => {
-              document.getElementById('bar').style.width = data.percent + '%';
-              document.getElementById('pct').textContent = Math.round(data.percent) + '%';
-              const mb = (data.transferred / 1048576).toFixed(1);
-              const total = (data.total / 1048576).toFixed(1);
-              const speed = (data.bytesPerSecond / 1048576).toFixed(1);
-              document.getElementById('speed').textContent = mb + ' MB / ' + total + ' MB  •  ' + speed + ' MB/s';
-            });
+            let progress = 0;
+            const bar = document.getElementById('bar');
+            const pct = document.getElementById('pct');
+            const speed = document.getElementById('speed');
+            const interval = setInterval(() => {
+              if(progress < 95) {
+                progress += Math.random() * 3;
+                bar.style.width = Math.min(progress, 95) + '%';
+                pct.textContent = Math.round(Math.min(progress, 95)) + '%';
+                speed.textContent = 'Downloading update, please wait...';
+              }
+            }, 400);
           </script>
         </body>
         </html>
@@ -147,13 +164,6 @@ autoUpdater.on('update-available', (info) => {
       autoUpdater.downloadUpdate()
     }
   })
-})
-
-autoUpdater.on('download-progress', (progress) => {
-  if (mainWindow) {
-    mainWindow.setProgressBar(progress.percent / 100)
-    mainWindow.setTitle(`Downloading update... ${Math.round(progress.percent)}%`)
-  }
 })
 
 autoUpdater.on('update-downloaded', () => {
