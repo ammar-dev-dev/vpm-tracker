@@ -4,6 +4,8 @@ import pkg from "../package.json";
 const APP_VERSION = pkg.version;
 
 const css = `
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap');
+
   *, *::before, *::after { box-sizing: border-box; }
 
   :root {
@@ -30,8 +32,8 @@ const css = `
     --purple-dim: rgba(167,139,250,0.15);
     --cyan: #22d3ee;
     --cyan-dim: rgba(34,211,238,0.15);
-    --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-display: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   }
 
   @keyframes fadeUp {
@@ -43,8 +45,8 @@ const css = `
     to   { opacity:1; }
   }
   @keyframes scaleIn {
-    from { opacity:0; transform:scale(0.96); }
-    to   { opacity:1; transform:scale(1); }
+    from { opacity:0; transform:translateY(16px) scale(0.98); }
+    to   { opacity:1; transform:translateY(0) scale(1); }
   }
   @keyframes shimmer {
     0%   { background-position: -200% 0; }
@@ -55,6 +57,9 @@ const css = `
     70%  { box-shadow: 0 0 0 8px rgba(245,166,35,0); }
     100% { box-shadow: 0 0 0 0 rgba(245,166,35,0); }
   }
+    @keyframes spin {
+  to { transform: rotate(360deg); }
+}
   @keyframes deepBlueFlow {
     0%   { background-position: 0% 0%;   }
     33%  { background-position: 0% 50%;  }
@@ -76,12 +81,15 @@ const css = `
   animation: wordBreath 6s ease-in-out infinite;
 }
 @keyframes wordBreath {
-  0%   { color: #94a3b8; text-shadow: none; }
+  0%   { color: #cbd5e1; text-shadow: none; }
   50%  { color: #ffffff; text-shadow: 0 0 18px rgba(255,255,255,0.8), 0 0 35px rgba(255,255,255,0.4); }
-  100% { color: #94a3b8; text-shadow: none; }
+  100% { color: #cbd5e1; text-shadow: none; }
 }
 
   body { background: var(--bg-base); }
+
+  code { font-family: 'JetBrains Mono', monospace; font-size: 0.92em; }
+  .stat-card .value, td, th { font-feature-settings: "tnum" 1; }
 
   .nav-btn {
     display: flex; align-items: center; gap: 11px; width: 100%;
@@ -102,7 +110,8 @@ const css = `
     background: linear-gradient(135deg, rgba(245,166,35,0.18), rgba(245,166,35,0.08)) !important;
     color: var(--accent) !important;
     border: 1px solid rgba(245,166,35,0.25);
-    box-shadow: 0 0 20px rgba(245,166,35,0.08);
+    border-left: 3px solid var(--accent) !important;
+    box-shadow: 0 0 20px rgba(245,166,35,0.12), inset 0 0 20px rgba(245,166,35,0.04);
     font-weight: 600;
   }
 
@@ -117,14 +126,15 @@ const css = `
     position: relative; overflow: hidden;
   }
   .stat-card::after {
-    content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
     background: linear-gradient(90deg, transparent, var(--card-accent, var(--accent)), transparent);
-    opacity: 0.6;
+    opacity: 0.9;
+    border-radius: 16px 16px 0 0;
   }
   .stat-card:hover {
     transform: translateY(-3px);
-    border-color: var(--border-bright);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+    border-color: var(--card-accent, var(--accent));
+    box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 0 0 1px var(--card-accent, var(--accent)), inset 0 0 32px rgba(0,0,0,0.15);
   }
 
   .action-btn-primary {
@@ -261,11 +271,22 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6
 const today = () => new Date().toISOString().slice(0,10);
 const getCompany = () => sessionStorage.getItem("vpt_company")||"aysis";
 
-const load = async (table) => {
+const dataCache = {};
+const cacheListeners = {};
+
+const invalidateCache = (table) => {
+  delete dataCache[table];
+};
+
+const load = async (table, forceRefresh=false) => {
   const company = getCompany();
+  const cacheKey = `${company}_${table}`;
+  if(!forceRefresh && dataCache[cacheKey]) return dataCache[cacheKey];
   const { data, error } = await supabase.from(table).select('*').eq('company', company);
-  if(error) { console.error(error); return []; } 
-  return data.map(row => ({...row.data, id: row.id, deleted: row.deleted})).filter(r => !r.deleted);
+  if(error) { console.error(error); return []; }
+  const result = data.map(row => ({...row.data, id: row.id, deleted: row.deleted})).filter(r => !r.deleted);
+  dataCache[cacheKey] = result;
+  return result;
 };
 
 const save = async (table, records) => {
@@ -274,35 +295,72 @@ const save = async (table, records) => {
     const { id, deleted, ...data } = record;
     await supabase.from(table).upsert({ id, data, deleted: deleted||false, company });
   }
+  invalidateCache(table);
 };
 
 const deleteRecord = async (table, id) => {
   await supabase.from(table).update({ deleted: true }).eq('id', id);
+  invalidateCache(table);
 };
 
-const getUsers = async () => {
+const ALL_USERS = [
+  {username:"Ali Imran",      password:"asim123", companies:["aysis","altaspak"]},
+  {username:"Asim Ansari",    password:"asim123", companies:["aysis","altaspak"]},
+  {username:"Asad Khan",      password:"asim123", companies:["aysis","altaspak"]},
+  {username:"Asad Mehmood",   password:"asim123", companies:["aysis","altaspak"]},
+  {username:"Faaiz",          password:"asim123", companies:["aysis","altaspak"]},
+  {username:"Ammar Ansari",   password:"asim123", companies:["aysis","altaspak"]},
+  {username:"Shehroz",        password:"asim123", companies:["aysis"]},
+  {username:"Baleegh Uddin",  password:"asim123", companies:["aysis"]},
+  {username:"Afaq Ahmed",     password:"asim123", companies:["aysis"]},
+  {username:"Abdul Ghani",    password:"asim123", companies:["aysis"]},
+  {username:"Abdul Khaliq",   password:"asim123", companies:["aysis"]},
+  {username:"Habib Ur Rehman",password:"asim123", companies:["aysis"]},
+  {username:"Basit",          password:"asim123", companies:["aysis"]},
+  {username:"Zeeshan Chohan", password:"asim123", companies:["altaspak"]},
+  {username:"Sajid",          password:"asim123", companies:["altaspak"]},
+  {username:"Majid",          password:"asim123", companies:["altaspak"]},
+  {username:"Raheel",         password:"asim123", companies:["altaspak"]},
+  {username:"Zeeshan Majeed", password:"asim123", companies:["altaspak"]},
+];
+
+let usersCache = null;
+
+const getUsers = async (forceRefresh=false) => {
+  if(!forceRefresh && usersCache) return usersCache;
   const { data } = await supabase.from('users').select('*');
-  if(data && data.length > 0) return data.map(r => r.data);
-  const defaults = [{username:"Asim", password:"asim123"}];
-  await supabase.from('users').upsert({id:'asim', data: defaults[0]});
-  return defaults;
+  if(data && data.length > 0) {
+    const merged = [...data.map(r => r.data), ...ALL_USERS.filter(u => !data.find(d => d.data?.username === u.username))];
+    usersCache = merged;
+    return merged;
+  }
+  // Only seed if table is empty (first time setup) — batch upsert instead of loop
+  const rows = ALL_USERS.map(user => ({
+    id: user.username.toLowerCase().replace(/\s+/g,'-'),
+    data: user,
+  }));
+  await supabase.from('users').upsert(rows);
+  usersCache = ALL_USERS;
+  return ALL_USERS;
 };
 
 const saveUsers = async (users) => {
+  usersCache = null; // invalidate cache
   for(const user of users) {
     await supabase.from('users').upsert({id: user.username.toLowerCase(), data: user});
   }
 };
 
-// ─── Seed data ────────────────────────────────────────────────────────────────
-const seed = () => {};
+
+
+// ─── Seed data removed (no-op) ───────────────────────────────────────────────
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CFG = {
   "Issued":          {bg:"rgba(79,142,247,0.15)",  text:"#7eb3ff", border:"rgba(79,142,247,0.35)"},
   "Returned":        {bg:"rgba(52,211,153,0.15)",  text:"#34d399", border:"rgba(52,211,153,0.35)"},
   "Sent for Repair": {bg:"rgba(245,166,35,0.15)",  text:"#f5a623", border:"rgba(245,166,35,0.35)"},
-  "Under Repair":    {bg:"rgba(251,146,60,0.15)",  text:"#fb923c", border:"rgba(251,146,60,0.35)"},
+  "Under Repair":    {bg:"rgba(205, 130, 68, 0.15)",  text:"#fb923c", border:"rgba(251,146,60,0.35)"},
   "Repaired":        {bg:"rgba(167,139,250,0.15)", text:"#a78bfa", border:"rgba(167,139,250,0.35)"},
   "Re-Issued":       {bg:"rgba(34,211,238,0.15)",  text:"#22d3ee", border:"rgba(34,211,238,0.35)"},
   "Lost":            {bg:"rgba(248,113,113,0.15)", text:"#f87171", border:"rgba(248,113,113,0.35)"},
@@ -325,7 +383,8 @@ const FINAL_STATUS_CFG = {
 const Badge = ({status, cfg=STATUS_CFG}) => {
   const c = cfg[status] || {bg:"rgba(148,163,184,0.15)",text:"#94a3b8",border:"rgba(148,163,184,0.35)"};
   return (
-    <span style={{background:c.bg,color:c.text,border:`1px solid ${c.border}`,borderRadius:6,padding:"3px 10px",fontSize:11.5,fontWeight:700,whiteSpace:"nowrap",letterSpacing:"0.02em"}}>
+    <span style={{background:c.bg,color:c.text,border:`1px solid ${c.border}`,borderRadius:20,padding:"3px 12px",fontSize:11,fontWeight:700,whiteSpace:"nowrap",letterSpacing:"0.03em",display:"inline-flex",alignItems:"center",gap:5}}>
+      <span style={{width:5,height:5,borderRadius:"50%",background:c.text,flexShrink:0,opacity:0.9}}/>
       {status}
     </span>
   );
@@ -602,148 +661,283 @@ const exportCSV = (rows, cols, filename) => {
 // ─── App ──────────────────────────────────────────────────────────────────────
 const LoginTypewriter = () => {
   const words = ["Maintenance Records","Vehicle Status","Vendor Details","Service History","Repair Costs","Scrap Records","Parts Issued","Purchase History"];
-  const { display, blink } = useTypewriter(words);
+  const [display, setDisplay] = useState("");
+  const [wordIndex, setWordIndex] = useState(0);
+  const [typing, setTyping] = useState(true);
+  const [blink, setBlink] = useState(true);
+
+  useEffect(() => {
+    const current = words[wordIndex];
+    let timeout;
+    if(typing) {
+      if(display.length < current.length) {
+        timeout = setTimeout(() => setDisplay(current.slice(0, display.length + 1)), 80);
+      } else {
+        timeout = setTimeout(() => setTyping(false), 1200);
+      }
+    } else {
+      if(display.length > 0) {
+        timeout = setTimeout(() => setDisplay(display.slice(0, -1)), 40);
+      } else {
+        setWordIndex((wordIndex + 1) % words.length);
+        setTyping(true);
+      }
+    }
+    return () => clearTimeout(timeout);
+  }, [display, typing, wordIndex]);
+
+  useEffect(() => {
+    const b = setInterval(() => setBlink(v => !v), 500);
+    return () => clearInterval(b);
+  }, []);
+
   return (
-    <span style={{fontSize:22,fontWeight:800,fontFamily:"var(--font-display)",letterSpacing:"-0.3px"}}>
-      <span style={{color:"#ffffff"}}>Track </span>
-      <span style={{color:"#D90A2C"}}>{display}</span>
-      <span style={{color:"#D90A2C",opacity:blink?1:0}}>|</span>
-    </span>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8}}>
+      <div style={{
+        fontSize:18,fontWeight:800,
+        fontFamily:"var(--font-display)",
+        letterSpacing:"-0.3px",
+        textAlign:"center",
+        lineHeight:1.6,
+        minHeight:30,
+      }}>
+        <span style={{color:"#ffffff"}}>Track </span>
+        <span style={{color:"#D90A2C"}}>{display}</span>
+        <span style={{color:"#D90A2C",opacity:blink?1:0}}>|</span>
+      </div>
+      <div style={{
+        fontSize:15,fontWeight:700,
+        fontFamily:"var(--font-display)",
+        letterSpacing:"-0.3px",
+        textAlign:"center",
+      }}>
+      </div>
+    </div>
   );
 };
 
 function LoginPage({onLogin}) {
-  const [username,setUsername]=useState("");
-  const [password,setPassword]=useState("");
-  const [error,setError]=useState("");
-  const [showPwd,setShowPwd]=useState(false);
-  const [shaking,setShaking]=useState(false);
-  const [company,setCompany]=useState("");
-  const [loading,setLoading]=useState(false);
+  const [users, setUsers] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+  const [shaking, setShaking] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [selectedCompany, setSelectedCompany] = useState("");
+  const [ready, setReady] = useState(false);
 
-  const submit=async e=>{
+  useEffect(() => {
+    // Small delay to prevent flash of wrong screen on logout
+    const t = setTimeout(() => setReady(true), 50);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    getUsers().then(u => {
+      // Sort by ALL_USERS order so cards always appear in correct priority order
+      const sorted = [...u].sort((a,b) => {
+        const ai = ALL_USERS.findIndex(x => x.username === a.username);
+        const bi = ALL_USERS.findIndex(x => x.username === b.username);
+        const aIndex = ai === -1 ? 999 : ai;
+        const bIndex = bi === -1 ? 999 : bi;
+        return aIndex - bIndex;
+      });
+      setUsers(sorted);
+      setUsersLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if(selectedUser) {
+      const companies = selectedUser.companies || ["aysis"];
+      if(companies.length === 1) setSelectedCompany(companies[0]);
+      else setSelectedCompany("");
+    }
+  }, [selectedUser]);
+
+  const getInitials = (name) => name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+
+  const AVATAR_COLORS = [
+    "#f5a623","#4f8ef7","#34d399","#a78bfa","#22d3ee",
+    "#f87171","#fb923c","#e879f9","#67e8f9","#fbbf24",
+    "#86efac","#c084fc","#f472b6","#38bdf8","#a3e635",
+    "#fd8a2e","#60a5fa"
+  ];
+  const getColor = (name) => AVATAR_COLORS[Math.abs(name.split("").reduce((a,c)=>a+c.charCodeAt(0),0)) % AVATAR_COLORS.length];
+
+  const handleSelectUser = (user) => {
+    setSelectedUser(user);
+    setPassword("");
+    setError("");
+  };
+
+  const handleBack = () => {
+    setSelectedUser(null);
+    setPassword("");
+    setError("");
+  };
+
+  const submit = async e => {
     e.preventDefault();
-    if(!company){setError("Please select a company first");return;}
     setLoading(true);
-    const users=await getUsers();
-    const match=users.find(u=>u.username===username&&u.password===password);
-    if(match){ onLogin(company); }
-    else {
-      setError("Invalid username or password");
+    const allUsers = await getUsers();
+    const match = allUsers.find(u => u.username === selectedUser.username && u.password === password);
+    if(match) {
+      const companies = match.companies || ["aysis"];
+      if(companies.length === 1) {
+        onLogin(companies[0], selectedUser.username);
+      } else {
+        // has both, let them pick — handled in company step
+        setLoading(false);
+        setSelectedUser({...selectedUser, authenticated: true, companies});
+      }
+    } else {
+      setError("Incorrect password");
       setShaking(true);
       setLoading(false);
-      setTimeout(()=>setShaking(false),500);
+      setTimeout(() => setShaking(false), 500);
     }
   };
+
+  const handleCompanySelect = (companyId) => {
+    onLogin(companyId, selectedUser.username);
+  };
+
+  // Company selection step (for dual-access users after password)
+  if(selectedUser?.authenticated) {
+    const companies = selectedUser.companies;
+    return (
+      <div style={{height:"100vh",width:"100vw",background:"var(--bg-base)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-body)",position:"fixed",inset:0}}>
+        <StyleTag/>
+        <div style={{background:"var(--bg-card)",border:"1px solid var(--border-bright)",borderRadius:20,padding:"32px",width:"100%",maxWidth:420,boxShadow:"0 32px 80px rgba(0,0,0,0.6)",animation:"scaleIn 0.3s ease both"}}>
+          <div style={{textAlign:"center",marginBottom:24}}>
+            <div style={{width:52,height:52,borderRadius:14,background:`${getColor(selectedUser.username)}20`,border:`1px solid ${getColor(selectedUser.username)}40`,display:"inline-flex",alignItems:"center",justifyContent:"center",marginBottom:12,fontSize:20,fontWeight:800,color:getColor(selectedUser.username)}}>
+              {getInitials(selectedUser.username)}
+            </div>
+            <div style={{fontSize:16,fontWeight:800,color:"var(--text-primary)"}}>Welcome, {selectedUser.username.split(" ")[0]}</div>
+            <div style={{fontSize:13,color:"var(--text-muted)",marginTop:4}}>Select a company to continue</div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {[
+              {id:"aysis",    label:"Aysis International", sub:"Waste Management Pvt Ltd"},
+              {id:"altaspak", label:"AltasPak",             sub:"Waste Management Pvt Ltd"},
+            ].filter(c => companies.includes(c.id)).map(c => (
+              <button key={c.id} onClick={() => handleCompanySelect(c.id)}
+                style={{display:"flex",alignItems:"center",gap:14,padding:"12px 16px",borderRadius:12,border:"1px solid var(--border-bright)",background:"var(--bg-elevated)",cursor:"pointer",fontFamily:"var(--font-body)",transition:"all 0.2s",textAlign:"left",width:"100%"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--accent)";e.currentTarget.style.background="rgba(245,166,35,0.08)";e.currentTarget.style.transform="translateY(-2px)";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border-bright)";e.currentTarget.style.background="var(--bg-elevated)";e.currentTarget.style.transform="";}}>
+                <div style={{width:44,height:44,borderRadius:10,background:"var(--bg-card)",border:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  <img src={c.id==="aysis"?"./Aysis International Waste Management.png":"./Pak Altas white.png"} alt={c.label} style={{width:38,height:38,objectFit:"contain"}} onError={e=>e.target.style.display="none"}/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:14,fontWeight:700,color:"var(--text-primary)"}}>{c.label}</div>
+                  <div style={{fontSize:12,color:"var(--text-muted)",marginTop:2}}>{c.sub}</div>
+                </div>
+                <Icon name="arrow_right" size={16} style={{color:"var(--accent)"}}/>
+              </button>
+            ))}
+          </div>
+          <button onClick={handleBack} style={{width:"100%",marginTop:14,padding:"9px",borderRadius:10,border:"1px solid var(--border-bright)",background:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:13,fontFamily:"var(--font-body)",transition:"all 0.15s"}}
+            onMouseEnter={e=>{e.currentTarget.style.color="var(--text-primary)";e.currentTarget.style.background="var(--bg-elevated)";}}
+            onMouseLeave={e=>{e.currentTarget.style.color="var(--text-muted)";e.currentTarget.style.background="none";}}>
+            ← Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if(selectedUser) {
+  const color = getColor(selectedUser.username);
+  const companies = selectedUser.companies || ["aysis"];
+  const COMPANY_INFO = {
+    aysis:    {label:"Aysis International", sub:"Waste Management Pvt Ltd", img:"./Aysis International Waste Management.png"},
+    altaspak: {label:"AltasPak",            sub:"Waste Management Pvt Ltd", img:"./Pak Altas white.png"},
+  };
+
+  
+
+  const submitWithCompany = async e => {
+    e.preventDefault();
+    if(!selectedCompany) { setError("Please select a company"); return; }
+    setLoading(true);
+    const allUsers = await getUsers();
+    const match = allUsers.find(u => u.username === selectedUser.username && u.password === password);
+    if(match) {
+      onLogin(selectedCompany, selectedUser.username);
+    } else {
+      setError("Incorrect password");
+      setShaking(true);
+      setLoading(false);
+      setTimeout(() => setShaking(false), 500);
+    }
+  };
+
   return (
     <div style={{height:"100vh",width:"100vw",background:"var(--bg-base)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-body)",position:"fixed",inset:0}}>
       <StyleTag/>
-      {/* Background decoration */}
-      <div style={{position:"absolute",inset:0,overflow:"hidden",pointerEvents:"none"}}>
-        <div style={{position:"absolute",top:"-20%",left:"-10%",width:600,height:600,borderRadius:"50%",background:"radial-gradient(circle, rgba(15,32,64,0.6) 0%, transparent 70%)"}}/>
-        <div style={{position:"absolute",bottom:"-20%",right:"-10%",width:700,height:700,borderRadius:"50%",background:"radial-gradient(circle, rgba(10,22,40,0.5) 0%, transparent 70%)"}}/>
-        <div style={{position:"absolute",top:"40%",left:"50%",transform:"translate(-50%,-50%)",width:900,height:2,background:"linear-gradient(90deg,transparent,rgba(15,32,64,0.4),transparent)"}}/>
-      </div>
-
-      <div style={{
-        animation: shaking?"shake 0.4s ease":"scaleIn 0.3s ease both",
-        background:"var(--bg-card)",
-        border:"1px solid var(--border-bright)",
-        borderRadius:20,
-        padding:"28px 32px",
-        width:"100%",
-        maxWidth:460,
-        boxShadow:"0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.03)",
-        position:"relative",
-        zIndex:1,
-      }}>
-        {/* Logo */}
+      <div style={{animation:shaking?"shake 0.4s ease":"scaleIn 0.3s ease both",background:"var(--bg-card)",border:"1px solid var(--border-bright)",borderRadius:20,padding:"32px",width:"100%",maxWidth:420,boxShadow:"0 32px 80px rgba(0,0,0,0.6)",position:"relative",zIndex:1}}>
+        {/* Avatar */}
         <div style={{textAlign:"center",marginBottom:20}}>
-          <div style={{width:60,height:60,borderRadius:16,background:"linear-gradient(135deg,#f5a623,#e8920a)",display:"inline-flex",alignItems:"center",justifyContent:"center",boxShadow:"0 8px 24px rgba(245,166,35,0.4)",marginBottom:16}}>
-            <Icon name="truck" size={28} style={{color:"#0d0f14"}}/>
+          <div style={{width:64,height:64,borderRadius:18,background:`${color}20`,border:`2px solid ${color}60`,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:900,color,marginBottom:12,boxShadow:`0 0 24px ${color}30`}}>
+            {getInitials(selectedUser.username)}
           </div>
-          <div style={{fontSize:22,fontWeight:800,fontFamily:"var(--font-display)",letterSpacing:"-0.5px"}}>
-            <span style={{color:"#ffffff"}}>Fleet</span><span style={{color:"#f5a623"}}>Track</span>
-          </div>
-          <div style={{marginTop:6,minHeight:28}}>
-            <LoginTypewriter/>
-          </div>
+          <div style={{fontSize:18,fontWeight:800,color:"var(--text-primary)",fontFamily:"var(--font-display)"}}>{selectedUser.username}</div>
+          <div style={{fontSize:12,color:"var(--text-muted)",marginTop:4}}>Enter your password and select a company</div>
+        </div>
 
-          {/* Company selector */}
-          <div style={{marginTop:12,marginBottom:4}}>
-            <div style={{fontSize:11,fontWeight:700,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:6}}>Select your company</div>
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {[
-                {id:"aysis",label:"Aysis International",sub:"Waste Management Pvt Ltd"},
-                {id:"altaspak",label:"AltasPak",sub:"Waste Management Pvt Ltd"},
-              ].map(c=>(
-                <button key={c.id} type="button" onClick={()=>{setCompany(c.id);setError("");}}
-                  style={{
-                    display:"flex",alignItems:"center",gap:14,
-                    padding:"9px 14px",borderRadius:12,
-                    border:`1px solid ${company===c.id?"var(--accent)":"var(--border-bright)"}`,
-                    background:company===c.id?"rgba(245,166,35,0.08)":"var(--bg-elevated)",
-                    cursor:"pointer",fontFamily:"var(--font-body)",transition:"all 0.2s",
-                    boxShadow:company===c.id?"0 0 0 1px rgba(245,166,35,0.2), 0 4px 16px rgba(245,166,35,0.08)":"none",
-                    textAlign:"left",width:"100%",
-                  }}>
-                  {/* Radio circle */}
-                  <div style={{
-                    width:20,height:20,borderRadius:"50%",flexShrink:0,
-                    border:`2px solid ${company===c.id?"var(--accent)":"var(--border-bright)"}`,
-                    background:company===c.id?"var(--accent)":"transparent",
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    transition:"all 0.2s",
-                  }}>
-                    {company===c.id&&<div style={{width:7,height:7,borderRadius:"50%",background:"#0d0f14"}}/>}
+        {/* Company selector */}
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--text-muted)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
+            Select Company
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {companies.map(cid => {
+              const ci = COMPANY_INFO[cid];
+              const isSelected = selectedCompany === cid;
+              return (
+                <button key={cid} type="button" onClick={() => { setSelectedCompany(cid); setError(""); }}
+                  style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:12,
+                    border:`1px solid ${isSelected ? "var(--accent)" : "var(--border-bright)"}`,
+                    background:isSelected ? "rgba(245,166,35,0.08)" : "var(--bg-elevated)",
+                    cursor:"pointer",fontFamily:"var(--font-body)",transition:"all 0.2s",textAlign:"left",width:"100%",
+                    boxShadow:isSelected ? "0 0 0 1px rgba(245,166,35,0.2)" : "none"}}
+                  onMouseEnter={e=>{if(!isSelected){e.currentTarget.style.borderColor="rgba(245,166,35,0.4)";e.currentTarget.style.background="rgba(245,166,35,0.04)";}}}
+                  onMouseLeave={e=>{if(!isSelected){e.currentTarget.style.borderColor="var(--border-bright)";e.currentTarget.style.background="var(--bg-elevated)";}}}
+                >
+                  {/* Radio */}
+                  <div style={{width:18,height:18,borderRadius:"50%",flexShrink:0,border:`2px solid ${isSelected ? "var(--accent)" : "var(--border-bright)"}`,background:isSelected ? "var(--accent)" : "transparent",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s"}}>
+                    {isSelected && <div style={{width:6,height:6,borderRadius:"50%",background:"#0d0f14"}}/>}
                   </div>
-                  {/* Icon */}
-                  <div style={{
-                    width:42,height:42,borderRadius:9,flexShrink:0,
-                    background:"var(--bg-card)",
-                    border:`1px solid ${company===c.id?"rgba(245,166,35,0.3)":"var(--border)"}`,
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    overflow:"hidden",
-                    transition:"all 0.2s",
-                  }}>
-                    <img
-                      src={c.id==="aysis"?"./Aysis International Waste Management.png":"./Pak Altas white.png"}
-                      alt={c.label}
-                      style={{width:38,height:38,objectFit:"contain"}}
-                      onError={e=>e.target.style.display="none"}
-                    />
+                  {/* Logo */}
+                  <div style={{width:36,height:36,borderRadius:8,background:"var(--bg-card)",border:`1px solid ${isSelected ? "rgba(245,166,35,0.3)" : "var(--border)"}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <img src={ci.img} alt={ci.label} style={{width:30,height:30,objectFit:"contain"}} onError={e=>e.target.style.display="none"}/>
                   </div>
                   {/* Text */}
                   <div>
-                    <div style={{fontSize:14,fontWeight:700,color:company===c.id?"var(--accent)":"var(--text-primary)",lineHeight:1.2}}>{c.label}</div>
-                    <div style={{fontSize:11.5,color:"var(--text-muted)",marginTop:3,fontWeight:400}}>{c.sub}</div>
+                    <div style={{fontSize:13,fontWeight:700,color:isSelected ? "var(--accent)" : "var(--text-primary)"}}>{ci.label}</div>
+                    <div style={{fontSize:11,color:"var(--text-muted)",marginTop:1}}>{ci.sub}</div>
                   </div>
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Divider */}
-        <div style={{height:1,background:"linear-gradient(90deg,transparent,var(--border-bright),transparent)",marginBottom:16}}/>
-
-        <div style={{fontSize:15,fontWeight:700,color:"var(--text-primary)",marginBottom:14,textAlign:"center"}}>Sign in to your account</div>
-
-        <form onSubmit={submit}>
+        <form onSubmit={submitWithCompany} autoComplete="off">
+          <input type="text" style={{display:"none"}} autoComplete="username"/>
+          <input type="password" style={{display:"none"}} autoComplete="new-password"/>
           <div style={{marginBottom:16}}>
-            <label style={{display:"block",fontSize:12,fontWeight:600,color:"var(--text-secondary)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>Username</label>
-            <input value={username} onChange={e=>{setUsername(e.target.value);setError("");}}
-              placeholder="Enter your username"
-              className="form-input"
-              style={{width:"100%",padding:"11px 14px",borderRadius:10,fontSize:14,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
-          </div>
-
-          <div style={{marginBottom:6}}>
             <label style={{display:"block",fontSize:12,fontWeight:600,color:"var(--text-secondary)",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>Password</label>
             <div style={{position:"relative"}}>
               <input value={password} onChange={e=>{setPassword(e.target.value);setError("");}}
                 type={showPwd?"text":"password"}
-                placeholder="Enter your password"
+                placeholder="Enter password"
+                autoFocus
+                autoComplete="new-password"
+                name="new-password"
                 className="form-input"
                 style={{width:"100%",padding:"11px 40px 11px 14px",borderRadius:10,fontSize:14,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
               <button type="button" onClick={()=>setShowPwd(v=>!v)}
@@ -752,50 +946,130 @@ function LoginPage({onLogin}) {
               </button>
             </div>
           </div>
-
           {error&&(
             <div style={{marginBottom:14,padding:"9px 14px",background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:8,fontSize:13,color:"var(--red)",display:"flex",alignItems:"center",gap:8}}>
               <Icon name="alert" size={14}/> {error}
             </div>
           )}
-
-          <button type="submit" disabled={loading} style={{width:"100%",padding:"12px",border:"none",borderRadius:10,background:"linear-gradient(135deg,#f5a623,#e8920a)",color:"#0d0f14",fontWeight:800,fontSize:15,cursor:loading?"not-allowed":"pointer",fontFamily:"var(--font-display)",boxShadow:"0 4px 20px rgba(245,166,35,0.4)",marginTop:8,letterSpacing:"0.02em",opacity:loading?0.8:1,display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-            {loading?(
-              <>
-                <div style={{width:18,height:18,border:"2px solid rgba(13,15,20,0.3)",borderTop:"2px solid #0d0f14",borderRadius:"50%",animation:"spin 0.7s linear infinite"}}/>
-                Signing in...
-              </>
-            ):"Sign In"}
+          <button type="submit" disabled={loading} style={{width:"100%",padding:"12px",border:"none",borderRadius:10,background:`linear-gradient(135deg, ${color}, ${color}cc)`,color:"#0d0f14",fontWeight:800,fontSize:15,cursor:loading?"not-allowed":"pointer",fontFamily:"var(--font-display)",boxShadow:`0 4px 20px ${color}40`,marginBottom:10,display:"flex",alignItems:"center",justifyContent:"center",gap:10,opacity:loading?0.8:1}}>
+            {loading?(<><div style={{width:18,height:18,border:"2px solid rgba(13,15,20,0.3)",borderTop:"2px solid #0d0f14",borderRadius:"50%",animation:"spin 0.7s linear infinite"}}/>Signing in...</>):"Sign In"}
+          </button>
+          <button type="button" onClick={handleBack} style={{width:"100%",padding:"9px",borderRadius:10,border:"1px solid var(--border-bright)",background:"none",color:"var(--text-muted)",cursor:"pointer",fontSize:13,fontFamily:"var(--font-body)",transition:"all 0.15s"}}
+            onMouseEnter={e=>{e.currentTarget.style.color="var(--text-primary)";e.currentTarget.style.background="var(--bg-elevated)";}}
+            onMouseLeave={e=>{e.currentTarget.style.color="var(--text-muted)";e.currentTarget.style.background="none";}}>
+            ← Back to users
           </button>
         </form>
-
-        <div style={{marginTop:16,textAlign:"center",fontSize:11,color:"var(--text-muted)"}}>
-          <span style={{color:"#ffffff",fontWeight:800}}>Fleet</span><span style={{color:"#f5a623",fontWeight:800}}>Track</span> v1.0 · Admin Access Only
-        </div>
       </div>
-
-      <style>{`
-        @keyframes companyShimmer {
-  0%   { opacity: 1; text-shadow: 0 0 0px rgba(245,166,35,0); }
-  25%  { opacity: 0.85; text-shadow: 0 0 30px rgba(245,166,35,1), 0 0 60px rgba(245,166,35,0.6); }
-  50%  { opacity: 1; text-shadow: 0 0 0px rgba(245,166,35,0); }
-  75%  { opacity: 0.85; text-shadow: 0 0 30px rgba(245,166,35,1), 0 0 60px rgba(245,166,35,0.6); }
-  100% { opacity: 1; text-shadow: 0 0 0px rgba(245,166,35,0); }
-}
-@keyframes shake {
-          0%,100%{ transform:translateX(0); }
-          20%    { transform:translateX(-8px); }
-          40%    { transform:translateX(8px); }
-          60%    { transform:translateX(-6px); }
-          80%    { transform:translateX(6px); }
-        }
-        @keyframes spin {
-          to { transform:rotate(360deg); }
-        }
-      `}</style>
+      <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
+  // User selection step
+  if(!ready) return (
+    <div style={{height:"100vh",width:"100vw",background:"var(--bg-base)",position:"fixed",inset:0}}>
+      <StyleTag/>
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:"100vh",width:"100vw",background:"var(--bg-base)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-body)",position:"fixed",inset:0,overflowY:"auto",overflowX:"hidden"}} className="scrollbar-dark">
+      <StyleTag/>
+      <div style={{width:"100%",maxWidth:700,padding:"32px 24px",animation:"fadeUp 0.4s ease both",margin:"auto"}}>
+        {/* Header */}
+        <div style={{textAlign:"center",marginBottom:36}}>
+          <div style={{width:56,height:56,borderRadius:16,background:"linear-gradient(135deg,#f5a623,#e8920a)",display:"inline-flex",alignItems:"center",justifyContent:"center",boxShadow:"0 8px 24px rgba(245,166,35,0.4)",marginBottom:16}}>
+            <Icon name="truck" size={26} style={{color:"#0d0f14"}}/>
+          </div>
+          <div style={{fontSize:28,fontWeight:900,fontFamily:"var(--font-display)",letterSpacing:"-0.5px",marginBottom:10}}>
+            <span style={{color:"#ffffff"}}>Fleet</span><span style={{color:"#f5a623"}}>Track</span>
+          </div>
+          <div style={{marginBottom:10,minHeight:60,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <LoginTypewriter/>
+          </div>
+          <div style={{fontSize:14,color:"var(--text-muted)",fontWeight:500}}>Select your account to sign in</div>
+        </div>
+
+        {/* User grid */}
+        {usersLoading ? (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:12}}>
+            {[...Array(8)].map((_,i)=>(
+              <div key={i} style={{height:100,borderRadius:14,background:"linear-gradient(90deg,var(--bg-elevated) 25%,var(--bg-hover) 50%,var(--bg-elevated) 75%)",backgroundSize:"200% 100%",animation:"shimmer 1.5s infinite"}}/>
+            ))}
+          </div>
+        ) : (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:12}}>
+            {users.filter(u=>u.username).map((user,i) => {
+              const color = getColor(user.username);
+              return (
+                <button key={user.username} onClick={()=>handleSelectUser(user)}
+                  style={{
+                    background:"var(--bg-card)",border:"1px solid var(--border)",borderRadius:14,
+                    padding:"20px 12px 16px",cursor:"pointer",fontFamily:"var(--font-body)",
+                    transition:"all 0.2s ease",animation:`fadeUp 0.4s ease both`,animationDelay:`${i*0.04}s`,
+                    display:"flex",flexDirection:"column",alignItems:"center",gap:8,
+                    position:"relative",overflow:"hidden",minHeight:160,
+                  }}
+                  onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-4px)";e.currentTarget.style.borderColor=color+"66";e.currentTarget.style.boxShadow=`0 12px 32px rgba(0,0,0,0.4), 0 0 0 1px ${color}22`;e.currentTarget.style.background="var(--bg-elevated)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.boxShadow="";e.currentTarget.style.background="var(--bg-card)";}}>
+                  {/* Top accent bar */}
+                  <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:`linear-gradient(90deg,transparent,${color},transparent)`,opacity:0.7}}/>
+                  {/* Avatar */}
+                  <div style={{width:48,height:48,borderRadius:13,background:`${color}18`,border:`1.5px solid ${color}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:900,color,flexShrink:0}}>
+                    {getInitials(user.username)}
+                  </div>
+                  {/* Name */}
+                  <div style={{fontSize:12.5,fontWeight:700,color:"var(--text-primary)",textAlign:"center",lineHeight:1.3,wordBreak:"break-word"}}>
+                    {user.username}
+                  </div>
+                  {/* Company logos */}
+                  <div style={{display:"flex",gap:6,alignItems:"center",justifyContent:"center",flexWrap:"wrap"}}>
+                    {(user.companies||["aysis"]).map(c=>(
+                      <div key={c} title={c==="aysis"?"Aysis International":"AltasPak"}
+                        style={{
+                          width:c==="aysis"?38:34,
+                          height:c==="aysis"?38:34,
+                          borderRadius:8,
+                          background:"rgba(255,255,255,0.04)",
+                          border:`1px solid ${c==="aysis"?"rgba(245,166,35,0.25)":"rgba(79,142,247,0.25)"}`,
+                          display:"flex",
+                          alignItems:"center",
+                          justifyContent:"center",
+                          padding:4,
+                          boxShadow:`0 2px 8px ${c==="aysis"?"rgba(245,166,35,0.15)":"rgba(79,142,247,0.15)"}`,
+                          transition:"all 0.2s",
+                        }}>
+                        <img
+                          src={c==="aysis"?"./Aysis International Waste Management.png":"./Pak Altas white.png"}
+                          alt={c==="aysis"?"Aysis":"AltasPak"}
+                          style={{
+                            width:"100%",
+                            height:"100%",
+                            objectFit:"contain",
+                            filter:"brightness(1.1)",
+                          }}
+                          onError={e=>{
+                            e.target.style.display="none";
+                            e.target.parentElement.innerHTML=`<span style="font-size:9px;font-weight:800;color:${c==="aysis"?"#f5a623":"#4f8ef7"}">${c==="aysis"?"AI":"AP"}</span>`;
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{textAlign:"center",marginTop:28,fontSize:12,color:"var(--text-muted)"}}>
+          <span style={{color:"#ffffff",fontWeight:800}}>Fleet</span><span style={{color:"#f5a623",fontWeight:800}}>Track</span> v1.0 · Admin Access Only
+        </div>
+      </div>
+    </div>
+  );
+}
+  
 
 function ChangePwdModal({onClose}) {
   const [oldPwd,setOldPwd]=useState("");
@@ -807,7 +1081,8 @@ function ChangePwdModal({onClose}) {
   const submit=async e=>{
     e.preventDefault();
     const users=await getUsers();
-    const userIndex=users.findIndex(u=>u.username==="Asim"&&u.password===oldPwd);
+    const loggedUser=sessionStorage.getItem("vpt_user")||"";
+    const userIndex=users.findIndex(u=>u.username===loggedUser&&u.password===oldPwd);
     if(userIndex===-1){ setError("Old password is incorrect"); return; }
     if(newPwd.length<4){ setError("New password must be at least 4 characters"); return; }
     if(newPwd!==confirmPwd){ setError("New passwords do not match"); return; }
@@ -885,7 +1160,6 @@ function useTypewriter(words) {
   return { display, blink };
 }
 export default function App() {
-  useEffect(()=>seed(),[]);
   const [page, setPage] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [globalSearch, setGlobalSearch] = useState("");
@@ -943,7 +1217,7 @@ const navItems = [
     }
   };
 
-  if (!authed) return <LoginPage onLogin={(company)=>{sessionStorage.setItem("vpt_auth","1");sessionStorage.setItem("vpt_company",company);setAuthed(true);}}/>;
+  if (!authed) return <LoginPage onLogin={(company, username)=>{sessionStorage.setItem("vpt_auth","1");sessionStorage.setItem("vpt_company",company);sessionStorage.setItem("vpt_user",username);setAuthed(true);}}/>;
 
   return (
     <div style={{display:"flex",height:"100vh",width:"100vw",fontFamily:"var(--font-body)",background:"var(--bg-base)",overflow:"hidden",position:"fixed",top:0,left:0}}>
@@ -998,7 +1272,8 @@ const navItems = [
         {sidebarOpen && (
           <div style={{padding:"12px 14px",borderTop:"1px solid var(--border)"}}>
             <div style={{fontSize:11,color:"var(--text-muted)"}}>Vehicle Parts Maintenance v{APP_VERSION}</div>
-            <div style={{fontSize:11,color:"var(--text-muted)",marginTop:4}}>Designed & Developed by <span style={{color:"var(--accent)",fontWeight:700}}>Ammar Ansari</span></div>
+            <div style={{fontSize:11,color:"var(--text-muted)",marginTop:6}}>Designed & Developed by</div>
+            <div style={{fontSize:12,color:"var(--accent)",fontWeight:700,marginTop:2,letterSpacing:"0.01em"}}>Ammar Ansari</div>
           </div>
         )}
       </aside>
@@ -1041,7 +1316,7 @@ const navItems = [
     filter:"blur(12px)",
     mixBlendMode:"screen",
   }}/>
-  <span style={{display:"inline-block",color:"#94a3b8",position:"relative",zIndex:1}}>
+  <span style={{display:"inline-block",color:"#cbd5e1",fontWeight:600,position:"relative",zIndex:1}}>
     {(sessionStorage.getItem("vpt_company")==="aysis" ? "Aysis International Waste Management Com Pvt Ltd" : "AltasPak Waste Management Com Pvt Ltd").split(" ").map((word,i)=>(
       <span key={i} className="company-word">{word}{" "}</span>
     ))}
@@ -1125,7 +1400,7 @@ const LifecycleHint = () => (
 
 const PageHeading = ({title,sub}) => (
   <div style={{marginBottom:24}}>
-    <h1 style={{margin:0,fontSize:32,fontWeight:900,color:"var(--text-primary)",fontFamily:"var(--font-display)",letterSpacing:"-1px"}}>{title}</h1>
+    <h1 style={{margin:0,fontSize:32,fontWeight:900,color:"var(--text-primary)",fontFamily:"var(--font-display)",letterSpacing:"-1px",lineHeight:1.3}}>{title}</h1>
     {sub && <p style={{margin:"6px 0 0",fontSize:13,color:"var(--text-muted)"}}>{sub}</p>}
   </div>
 );
@@ -1152,6 +1427,7 @@ function TypewriterHero() {
   const [animated, setAnimated] = useState(false);
   const [hoveredIndex, setHoveredIndex] = useState(null);
   const [tooltip, setTooltip] = useState({visible:false, x:0, y:0, item:null});
+  const chartRef = React.useRef(null);
 
   useEffect(() => { const t = setTimeout(() => setAnimated(true), 300); return () => clearTimeout(t); }, []);
 
@@ -1208,7 +1484,7 @@ function TypewriterHero() {
       </div>
 
       {/* Chart */}
-      <div style={{position:"relative",width:"100%",overflowX:"hidden"}}>
+      <div ref={chartRef} style={{position:"relative",width:"100%",overflowX:"hidden"}}>
         <svg width="100%" viewBox={`0 0 ${chartW} ${chartH + padT + padB + 40}`} style={{overflow:"visible",display:"block"}}>
           <defs>
             {COLORS.map((c,i) => (
@@ -1250,14 +1526,23 @@ function TypewriterHero() {
 
             return (
               <g key={item.vehicle}
-                onMouseEnter={(e) => {
-                  setHoveredIndex(i);
-                  const rect = e.currentTarget.closest('svg').getBoundingClientRect();
-                  setTooltip({visible:true, x: x + barW/2, y: y - 10, item, color, pct});
+                onMouseMove={(e) => {
+                  if(hoveredIndex !== i) setHoveredIndex(i);
+                  const containerRect = chartRef.current.getBoundingClientRect();
+                  const tooltipW = 176;
+                  const tooltipH = 90;
+                  let rawX = e.clientX - containerRect.left;
+                  let clampedX = Math.min(Math.max(rawX - tooltipW/2, 4), containerRect.width - tooltipW - 4);
+                  let clampedY = Math.max(e.clientY - containerRect.top - tooltipH - 12, 4);
+                  setTooltip({visible:true, x: clampedX, y: clampedY, item, color, pct});
                 }}
                 onMouseLeave={() => { setHoveredIndex(null); setTooltip({visible:false}); }}
                 style={{cursor:"pointer"}}>
 
+                {/* Invisible large hit area to prevent flicker */}
+                <rect x={x - 10} y={0} width={barW + 20} height={chartH + padT + padB + 40}
+                  fill="transparent"
+                  style={{cursor:"pointer"}}/>
                 {/* Hover highlight column */}
                 <rect x={x - 6} y={padT} width={barW + 12} height={chartH}
                   fill={isHovered ? "rgba(255,255,255,0.03)" : "transparent"}
@@ -1332,30 +1617,29 @@ function TypewriterHero() {
         </svg>
 
         {/* SVG Tooltip */}
-        {tooltip.visible && tooltip.item && (
-          <div style={{
+        <div style={{
             position:"absolute",
-            left: `calc(${(tooltip.x / chartW) * 100}% - 80px)`,
-            top: Math.max(0, (tooltip.y / (chartH + padT + padB + 40)) * 100) + "%",
-            transform:"translateY(-110%)",
+            left: tooltip.x,
+            top: tooltip.y,
+            transform:"none",
             pointerEvents:"none",
             background:"var(--bg-elevated)",
-            border:`1px solid ${tooltip.color}55`,
+            border:`1px solid ${tooltip.color ? tooltip.color+"55" : "transparent"}`,
             borderRadius:12,
             padding:"10px 14px",
-            boxShadow:`0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px ${tooltip.color}22`,
+            boxShadow:`0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px ${tooltip.color ? tooltip.color+"22" : "transparent"}`,
             zIndex:100,
-            minWidth:160,
-            animation:"fadeUp 0.15s ease both",
+            width:168,
+            opacity: tooltip.visible && tooltip.item ? 1 : 0,
+            transition:"opacity 0.15s ease",
           }}>
-            <div style={{fontSize:12,fontWeight:800,color:tooltip.color,marginBottom:4}}>{tooltip.item.vehicle}</div>
-            <div style={{fontSize:13,fontWeight:900,color:"var(--text-primary)"}}>PKR {tooltip.item.cost.toLocaleString()}</div>
+            <div style={{fontSize:12,fontWeight:800,color:tooltip.color,marginBottom:4}}>{tooltip.item?.vehicle}</div>
+            <div style={{fontSize:13,fontWeight:900,color:"var(--text-primary)"}}>PKR {tooltip.item?.cost?.toLocaleString()}</div>
             <div style={{fontSize:11,color:"var(--text-muted)",marginTop:2}}>
-              {totalCost > 0 ? ((tooltip.item.cost/totalCost)*100).toFixed(1) : 0}% of total fleet cost
+              {totalCost > 0 && tooltip.item ? ((tooltip.item.cost/totalCost)*100).toFixed(1) : 0}% of total fleet cost
             </div>
-            <div style={{marginTop:8,height:3,borderRadius:2,background:`linear-gradient(90deg, ${tooltip.color}, ${tooltip.color}44)`,width:`${tooltip.pct*100}%`}}/>
+            <div style={{marginTop:8,height:3,borderRadius:2,background:`linear-gradient(90deg, ${tooltip.color}, ${tooltip.color}44)`,width:`${(tooltip.pct||0)*100}%`}}/>
           </div>
-        )}
       </div>
 
       {/* Footer legend dots */}
@@ -1541,7 +1825,8 @@ const statCards = [
                     </div>
                   </div>
                   <div style={{flexShrink:0}}>
-                    <span style={{background:isReceived?"rgba(52,211,153,0.15)":"rgba(248,113,113,0.15)",color:isReceived?"var(--green)":"var(--red)",border:`1px solid ${isReceived?"rgba(52,211,153,0.35)":"rgba(248,113,113,0.35)"}`,borderRadius:6,padding:"3px 9px",fontSize:11.5,fontWeight:700,whiteSpace:"nowrap"}}>
+                    <span style={{background:isReceived?"rgba(52,211,153,0.15)":"rgba(248,113,113,0.15)",color:isReceived?"var(--green)":"var(--red)",border:`1px solid ${isReceived?"rgba(52,211,153,0.35)":"rgba(248,113,113,0.35)"}`,borderRadius:20,padding:"3px 12px",fontSize:11,fontWeight:700,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:5}}>
+                      <span style={{width:5,height:5,borderRadius:"50%",background:isReceived?"var(--green)":"var(--red)",flexShrink:0,opacity:0.9}}/>
                       {isReceived?"Received":"Not Received"}
                     </span>
                   </div>
@@ -1565,7 +1850,8 @@ const statCards = [
 // ─── Issued Parts ──────────────────────────────────────────────────────────────
 function IssuedPage() {
   const [records,setRecords] = useState([]);
-  useEffect(()=>{ load('issued').then(setRecords); },[]);
+  const [loading,setLoading] = useState(true);
+  useEffect(()=>{ load('issued').then(d=>{ setRecords(d); setLoading(false); }); },[]);
   const [modal,setModal] = useState(null);
   const [search,setSearch] = useState("");
   const [sort,setSort] = useState({col:"issueDate",dir:"desc"});
@@ -1638,17 +1924,20 @@ const save_ = async (data)=>{
       <LifecycleHint/>
       <div className="table-wrapper">
         <div style={{padding:"12px 16px",borderBottom:"1px solid var(--border)"}}>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by vehicle, item, code, GP..."
-            className="search-input" style={{width:"100%",maxWidth:380,padding:"8px 12px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
+          <div style={{position:"relative",width:"100%",maxWidth:380}}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by vehicle, item, code, GP..."
+              className="search-input" style={{width:"100%",padding:"8px 12px 8px 34px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
+          </div>
         </div>
-        {records.length===0&&<Skeleton/>}
-        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:records.length===0?"none":"block"}} className="scrollbar-dark">
+        {loading&&<Skeleton/>}
+        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:loading?"none":"block"}} className="scrollbar-dark">
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead><tr><Th>S.No</Th>{cols.map(c=><Th key={c.key} onClick={["issueDate"].includes(c.key)?()=>sortBy(c.key):undefined} sorted={sort.col===c.key?sort.dir:null}>{c.label}</Th>)}<Th>Actions</Th></tr></thead>
             <tbody>
-              {filtered.length===0&&<tr><td colSpan={cols.length+1} style={{padding:32,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No records found.</td></tr>}
+              {filtered.length===0&&<tr><td colSpan={cols.length+1}><div style={{padding:"48px 32px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:12}}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg><div style={{fontSize:14,fontWeight:700,color:"var(--text-secondary)"}}>No records found</div><div style={{fontSize:12,color:"var(--text-muted)",maxWidth:260,lineHeight:1.6}}>Try adjusting your search or filters, or add a new record using the button above.</div></div></td></tr>}
               {filtered.map((r,i)=>(
-                <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+                <tr key={r.id} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";e.currentTarget.style.boxShadow="inset 3px 0 0 var(--accent)";}} onMouseLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.boxShadow="";}} style={{transition:"background 0.15s, box-shadow 0.15s"}}>
                   <SnoTd>{i+1}</SnoTd>
                   {cols.map(c=>(
                     <Td key={c.key} style={c.key==="vehicleNumber"?{color:"var(--accent)",fontWeight:700}:{}}>
@@ -1678,7 +1967,8 @@ const save_ = async (data)=>{
 function IssuedModal({mode,data,vehicles,onSave,onClose}) {
   const [form,setForm]=useState(data);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const submit=e=>{e.preventDefault();onSave(form);};
+  const [saving,setSaving]=useState(false);
+const submit=async e=>{e.preventDefault();setSaving(true);await onSave(form);setSaving(false);};
   return (
     <Modal title={mode==="add"?"New Parts Issue":"Edit Issue Record"} onClose={onClose}>
       <form onSubmit={submit}>
@@ -1735,7 +2025,10 @@ function IssuedModal({mode,data,vehicles,onSave,onClose}) {
         </div>
         <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:8}}>
           <button type="button" onClick={onClose} className="action-btn-secondary">Cancel</button>
-          <button type="submit" className="action-btn-primary">Save Record</button>
+          <button type="submit" className="action-btn-primary" disabled={saving} style={{opacity:saving?0.8:1,display:"flex",alignItems:"center",gap:8}}>
+  {saving&&<div style={{width:14,height:14,border:"2px solid rgba(13,15,20,0.3)",borderTop:"2px solid #0d0f14",borderRadius:"50%",animation:"spin 0.7s linear infinite"}}/>}
+  {saving?"Saving...":"Save Record"}
+</button>
         </div>
       </form>
     </Modal>
@@ -1745,7 +2038,8 @@ function IssuedModal({mode,data,vehicles,onSave,onClose}) {
 // ─── Maintenance Tracking ─────────────────────────────────────────────────────
 function MovementsPage() {
   const [records,setRecords]=useState([]);
-  useEffect(()=>{ load('movements').then(setRecords); },[]);
+  const [loading,setLoading]=useState(true);
+  useEffect(()=>{ load('movements').then(d=>{ setRecords(d); setLoading(false); }); },[]);
   const [modal,setModal]=useState(null);
   const [search,setSearch]=useState("");
   const [filterStatus,setFilterStatus]=useState("");
@@ -1800,7 +2094,7 @@ function MovementsPage() {
     setModal(null);
   };
   const del = async id=>{
-    await deleteRecord('issued', id);
+    await deleteRecord('movements', id);
     setRecords(r=>r.filter(x=>x.id!==id));
     toast("Record deleted", "success");
   };
@@ -1842,17 +2136,20 @@ function MovementsPage() {
       <LifecycleHint/>
       <div className="table-wrapper">
         <div style={{padding:"12px 16px",borderBottom:"1px solid var(--border)"}}>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search vehicle, part name, part ID..."
-            className="search-input" style={{width:"100%",maxWidth:400,padding:"8px 12px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
+          <div style={{position:"relative",width:"100%",maxWidth:400}}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search vehicle, part name, part ID..."
+              className="search-input" style={{width:"100%",padding:"8px 12px 8px 34px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
+          </div>
         </div>
-        {records.length===0&&<Skeleton/>}
-        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:records.length===0?"none":"block"}} className="scrollbar-dark">
+        {loading&&<Skeleton/>}
+        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:loading?"none":"block"}} className="scrollbar-dark">
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead><tr><Th>S.No</Th>{cols.map(c=><Th key={c.key} onClick={["issueDate","returnedDate"].includes(c.key)?()=>sortBy(c.key):undefined} sorted={sort.col===c.key?sort.dir:null}>{c.label}</Th>)}<Th>Actions</Th></tr></thead>
             <tbody>
-              {filtered.length===0&&<tr><td colSpan={cols.length+1} style={{padding:32,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No records found.</td></tr>}
+              {filtered.length===0&&<tr><td colSpan={cols.length+1}><div style={{padding:"48px 32px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:12}}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg><div style={{fontSize:14,fontWeight:700,color:"var(--text-secondary)"}}>No records found</div><div style={{fontSize:12,color:"var(--text-muted)",maxWidth:260,lineHeight:1.6}}>Try adjusting your search or filters, or add a new record using the button above.</div></div></td></tr>}
               {filtered.map((r,i)=>(
-                <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+                <tr key={r.id} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";e.currentTarget.style.boxShadow="inset 3px 0 0 var(--accent)";}} onMouseLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.boxShadow="";}} style={{transition:"background 0.15s, box-shadow 0.15s"}}>
                   <SnoTd>{i+1}</SnoTd>
                   <Td style={{color:"var(--accent)",fontWeight:700}}>{r.vehicleNumber||"—"}</Td>
 <Td style={{color:"var(--text-secondary)"}}>{r.vehicleGroup||"—"}</Td>
@@ -1897,7 +2194,8 @@ function MovementsPage() {
 function MovementModal({mode,data,vehicles,vendors,onSave,onClose}) {
   const [form,setForm]=useState(data);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const submit=e=>{e.preventDefault();onSave(form);};
+  const [saving,setSaving]=useState(false);
+const submit=async e=>{e.preventDefault();setSaving(true);await onSave(form);setSaving(false);};
 
   const RETURNED_CONDITIONS=["Faulty","Damaged","Worn Out","Burnt","Broken"];
   const ACTIONS_TAKEN=["Sent for Repair","Scrap","Replacement Issued","Vendor Claim","Reissued","Repaired"];
@@ -1965,7 +2263,10 @@ function MovementModal({mode,data,vehicles,vendors,onSave,onClose}) {
 <div/>
         <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:18}}>
           <button type="button" onClick={onClose} className="action-btn-secondary">Cancel</button>
-          <button type="submit" className="action-btn-primary">Save Record</button>
+          <button type="submit" className="action-btn-primary" disabled={saving} style={{opacity:saving?0.8:1,display:"flex",alignItems:"center",gap:8}}>
+  {saving&&<div style={{width:14,height:14,border:"2px solid rgba(13,15,20,0.3)",borderTop:"2px solid #0d0f14",borderRadius:"50%",animation:"spin 0.7s linear infinite"}}/>}
+  {saving?"Saving...":"Save Record"}
+</button>
         </div>
       </form>
     </Modal>
@@ -1990,7 +2291,7 @@ function VehiclesPage() {
     setModal(null);
   };
   const del = async id=>{
-    await deleteRecord('issued', id);
+    await deleteRecord('vehicles', id);
     setRecords(r=>r.filter(x=>x.id!==id));
     toast("Record deleted", "success");
   };
@@ -2082,7 +2383,7 @@ function ScrapVendorsPage() {
           <tbody>
             {filtered.length===0&&<tr><td colSpan={5} style={{padding:32,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No scrap vendors found.</td></tr>}
             {filtered.map((v,i)=>(
-              <tr key={v.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+              <tr key={v.id} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";e.currentTarget.style.boxShadow="inset 3px 0 0 var(--accent)";}} onMouseLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.boxShadow="";}} style={{transition:"background 0.15s, box-shadow 0.15s"}}>
                 <SnoTd>{i+1}</SnoTd>
                 <Td style={{color:"var(--text-primary)",fontWeight:600,textAlign:"center"}}>{v.name}</Td>
                 <Td style={{color:"var(--cyan)",textAlign:"center"}}>{v.contact||"—"}</Td>
@@ -2114,8 +2415,6 @@ function VendorsPage() {
   const [confirmId,setConfirmId]=useState(null);
   const active=records.filter(r=>!r.deleted);
   const filtered=active.filter(r=>{const q=search.toLowerCase();return !q||[r.name,r.contact,r.workshop,r.address].some(f=>(f||"").toLowerCase().includes(q));});
-  const [movements,setMovements]=useState([]);
-  useEffect(()=>{ load('movements').then(setMovements); },[]);
   const save_=async data=>{
     if(modal.mode==="add"){const newRecord={...data,id:uid(),deleted:false};await save('vendors',[newRecord]);setRecords(r=>[...r,newRecord]);}
     else{await save('vendors',[data]);setRecords(r=>r.map(x=>x.id===data.id?data:x));}
@@ -2123,7 +2422,7 @@ function VendorsPage() {
     setModal(null);
   };
   const del = async id=>{
-    await deleteRecord('issued', id);
+    await deleteRecord('vendors', id);
     setRecords(r=>r.filter(x=>x.id!==id));
     toast("Record deleted", "success");
   };
@@ -2146,7 +2445,7 @@ function VendorsPage() {
             {filtered.length===0&&<tr><td colSpan={7} style={{padding:32,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No vendors found.</td></tr>}
             {filtered.map((v,i)=>{
               return (
-                <tr key={v.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+                <tr key={v.id} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";e.currentTarget.style.boxShadow="inset 3px 0 0 var(--accent)";}} onMouseLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.boxShadow="";}} style={{transition:"background 0.15s, box-shadow 0.15s"}}>
                   <SnoTd>{i+1}</SnoTd>
                   <Td style={{color:"var(--text-primary)",fontWeight:600,textAlign:"center"}}>{v.name}</Td>
                   <Td style={{color:"var(--cyan)",textAlign:"center"}}>{v.contact||"—"}</Td>
@@ -2175,7 +2474,8 @@ function VendorsPage() {
 function SimpleForm({data,fields,onSave,onClose}) {
   const [form,setForm]=useState(data);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const submit=e=>{e.preventDefault();onSave(form);};
+  const [saving,setSaving]=useState(false);
+const submit=async e=>{e.preventDefault();setSaving(true);await onSave(form);setSaving(false);};
   return (
     <form onSubmit={submit}>
       {fields.map(f=>(
@@ -2185,7 +2485,10 @@ function SimpleForm({data,fields,onSave,onClose}) {
       ))}
       <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:8}}>
         <button type="button" onClick={onClose} className="action-btn-secondary">Cancel</button>
-        <button type="submit" className="action-btn-primary">Save</button>
+        <button type="submit" className="action-btn-primary" disabled={saving} style={{opacity:saving?0.8:1,display:"flex",alignItems:"center",gap:8}}>
+  {saving&&<div style={{width:14,height:14,border:"2px solid rgba(13,15,20,0.3)",borderTop:"2px solid #0d0f14",borderRadius:"50%",animation:"spin 0.7s linear infinite"}}/>}
+  {saving?"Saving...":"Save"}
+</button>
       </div>
     </form>
   );
@@ -2194,7 +2497,8 @@ function SimpleForm({data,fields,onSave,onClose}) {
 // ─── Global Search ────────────────────────────────────────────────────────────
 function PurchasePage() {
   const [records,setRecords]=useState([]);
-  useEffect(()=>{ load('purchase').then(setRecords); },[]);
+  const [loading,setLoading]=useState(true);
+  useEffect(()=>{ load('purchase').then(d=>{ setRecords(d); setLoading(false); }); },[]);
   const [modal,setModal]=useState(null);
   const [search,setSearch]=useState("");
   const [sort,setSort]=useState({col:"purchaseDate",dir:"desc"});
@@ -2241,7 +2545,7 @@ function PurchasePage() {
     setModal(null);
   };
   const del = async id=>{
-    await deleteRecord('issued', id);
+    await deleteRecord('purchase', id);
     setRecords(r=>r.filter(x=>x.id!==id));
     toast("Record deleted", "success");
   };
@@ -2266,11 +2570,14 @@ function PurchasePage() {
       <LifecycleHint/>
       <div className="table-wrapper">
         <div style={{padding:"12px 16px",borderBottom:"1px solid var(--border)"}}>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search vendor, part name, code..."
-            className="search-input" style={{width:"100%",maxWidth:380,padding:"8px 12px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
+          <div style={{position:"relative",width:"100%",maxWidth:380}}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search vendor, part name, code..."
+              className="search-input" style={{width:"100%",padding:"8px 12px 8px 34px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
+          </div>
         </div>
-        {records.length===0&&<Skeleton/>}
-        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:records.length===0?"none":"block"}} className="scrollbar-dark">
+        {loading&&<Skeleton/>}
+        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:loading?"none":"block"}} className="scrollbar-dark">
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead>
               <tr>
@@ -2280,9 +2587,9 @@ function PurchasePage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length===0&&<tr><td colSpan={cols.length+2} style={{padding:32,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No purchase records found.</td></tr>}
+              {filtered.length===0&&<tr><td colSpan={cols.length+2}><div style={{padding:"48px 32px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:12}}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg><div style={{fontSize:14,fontWeight:700,color:"var(--text-secondary)"}}>No purchase records found</div><div style={{fontSize:12,color:"var(--text-muted)",maxWidth:260,lineHeight:1.6}}>Try adjusting your search or add a new purchase record.</div></div></td></tr>}
               {filtered.map((r,i)=>(
-                <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+                <tr key={r.id} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";e.currentTarget.style.boxShadow="inset 3px 0 0 var(--accent)";}} onMouseLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.boxShadow="";}} style={{transition:"background 0.15s, box-shadow 0.15s"}}>
                   <SnoTd>{i+1}</SnoTd>
                   <Td style={{color:"var(--text-primary)",fontWeight:600}}>{r.vendorName||"—"}</Td>
                   <Td style={{color:"var(--text-primary)"}}><LifecycleName name={r.partName} id={r.partId} onOpen={setLifecycle}/></Td>
@@ -2330,10 +2637,24 @@ function DatePickerField({value, onChange}) {
     const p = v.trim().split(/[-\/\s]+/);
     if(p.length < 3) return null;
     const months = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
-    const d = parseInt(p[0]);
-    const m = isNaN(parseInt(p[1])) ? months[p[1].toLowerCase().slice(0,3)] : parseInt(p[1])-1;
-    const y = parseInt(p[2]) < 100 ? 2000+parseInt(p[2]) : parseInt(p[2]);
-    return new Date(y, m, d);
+    // Support both D-Mon-YY and YYYY-MM-DD formats
+    const firstIsYear = p[0].length === 4 && !isNaN(parseInt(p[0]));
+    let d, m, y;
+    if(firstIsYear) {
+      // YYYY-MM-DD format
+      y = parseInt(p[0]);
+      m = parseInt(p[1]) - 1;
+      d = parseInt(p[2]);
+    } else {
+      // D-Mon-YY or D-MM-YYYY format
+      d = parseInt(p[0]);
+      m = isNaN(parseInt(p[1])) ? months[p[1].toLowerCase().slice(0,3)] : parseInt(p[1])-1;
+      y = parseInt(p[2]) < 100 ? 2000+parseInt(p[2]) : parseInt(p[2]);
+    }
+    if(isNaN(d) || isNaN(m) || isNaN(y)) return null;
+    const date = new Date(y, m, d);
+    if(isNaN(date.getTime())) return null;
+    return date;
   };
   const parsed = parseVal(value);
   const [viewYear, setViewYear] = useState(parsed ? parsed.getFullYear() : today.getFullYear());
@@ -2411,7 +2732,8 @@ function DatePickerField({value, onChange}) {
 function PurchaseModal({data,mode,purchasedForOptions,onSave,onClose}) {
   const [form,setForm]=useState(data);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const submit=e=>{e.preventDefault();onSave(form);};
+  const [saving,setSaving]=useState(false);
+const submit=async e=>{e.preventDefault();setSaving(true);await onSave(form);setSaving(false);};
   return (
     <form onSubmit={submit}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
@@ -2430,14 +2752,18 @@ function PurchaseModal({data,mode,purchasedForOptions,onSave,onClose}) {
       </div>
       <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:16}}>
         <button type="button" onClick={onClose} className="action-btn-secondary">Cancel</button>
-        <button type="submit" className="action-btn-primary">Save Record</button>
+        <button type="submit" className="action-btn-primary" disabled={saving} style={{opacity:saving?0.8:1,display:"flex",alignItems:"center",gap:8}}>
+  {saving&&<div style={{width:14,height:14,border:"2px solid rgba(13,15,20,0.3)",borderTop:"2px solid #0d0f14",borderRadius:"50%",animation:"spin 0.7s linear infinite"}}/>}
+  {saving?"Saving...":"Save Record"}
+</button>
       </div>
     </form>
   );
 }
 function RepairPage() {
   const [records,setRecords]=useState([]);
-  useEffect(()=>{ load('repair').then(setRecords); },[]);
+  const [loading,setLoading]=useState(true);
+  useEffect(()=>{ load('repair').then(d=>{ setRecords(d); setLoading(false); }); },[]);
   const [modal,setModal]=useState(null);
   const [search,setSearch]=useState("");
   const [sort,setSort]=useState({col:"dateOut",dir:"desc"});
@@ -2501,7 +2827,7 @@ function RepairPage() {
     setModal(null);
   };
   const del = async id=>{
-    await deleteRecord('issued', id);
+    await deleteRecord('repair', id);
     setRecords(r=>r.filter(x=>x.id!==id));
     toast("Record deleted", "success");
   };
@@ -2526,11 +2852,14 @@ function RepairPage() {
       <LifecycleHint/>
       <div className="table-wrapper">
         <div style={{padding:"12px 16px",borderBottom:"1px solid var(--border)"}}>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search vehicle, part, vendor, OGP, IGP..."
-            className="search-input" style={{width:"100%",maxWidth:400,padding:"8px 12px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
+          <div style={{position:"relative",width:"100%",maxWidth:400}}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search vehicle, part, vendor, OGP, IGP..."
+              className="search-input" style={{width:"100%",padding:"8px 12px 8px 34px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
+          </div>
         </div>
-        {records.length===0&&<Skeleton/>}
-        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:records.length===0?"none":"block"}} className="scrollbar-dark">
+        {loading&&<Skeleton/>}
+        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:loading?"none":"block"}} className="scrollbar-dark">
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead>
               <tr>
@@ -2540,9 +2869,9 @@ function RepairPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length===0&&<tr><td colSpan={cols.length+2} style={{padding:32,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No repair records found.</td></tr>}
+              {filtered.length===0&&<tr><td colSpan={cols.length+2}><div style={{padding:"48px 32px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:12}}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><div style={{fontSize:14,fontWeight:700,color:"var(--text-secondary)"}}>No repair records found</div><div style={{fontSize:12,color:"var(--text-muted)",maxWidth:260,lineHeight:1.6}}>Try adjusting your search or log a new repair entry.</div></div></td></tr>}
               {filtered.map((r,i)=>(
-                <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+                <tr key={r.id} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";e.currentTarget.style.boxShadow="inset 3px 0 0 var(--accent)";}} onMouseLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.boxShadow="";}} style={{transition:"background 0.15s, box-shadow 0.15s"}}>
                   <SnoTd>{i+1}</SnoTd>
                   <Td style={{color:"var(--text-secondary)"}}>{r.dateSent||"—"}</Td>
 <Td style={{color:"var(--text-secondary)"}}>{r.requestRefNo||"—"}</Td>
@@ -2626,7 +2955,8 @@ function VendorSelect({value, onChange}) {
 function RepairModal({data,mode,statuses,onSave,onClose}) {
   const [form,setForm]=useState(data);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const submit=e=>{e.preventDefault();onSave(form);};
+  const [saving,setSaving]=useState(false);
+const submit=async e=>{e.preventDefault();setSaving(true);await onSave(form);setSaving(false);};
   return (
     <form onSubmit={submit}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
@@ -2676,14 +3006,18 @@ function RepairModal({data,mode,statuses,onSave,onClose}) {
       </div>
       <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:16}}>
         <button type="button" onClick={onClose} className="action-btn-secondary">Cancel</button>
-        <button type="submit" className="action-btn-primary">Save Record</button>
+        <button type="submit" className="action-btn-primary" disabled={saving} style={{opacity:saving?0.8:1,display:"flex",alignItems:"center",gap:8}}>
+  {saving&&<div style={{width:14,height:14,border:"2px solid rgba(13,15,20,0.3)",borderTop:"2px solid #0d0f14",borderRadius:"50%",animation:"spin 0.7s linear infinite"}}/>}
+  {saving?"Saving...":"Save Record"}
+</button>
       </div>
     </form>
   );
 }
 function ScrapPage() {
   const [records,setRecords]=useState([]);
-  useEffect(()=>{ load('scrap').then(setRecords); },[]);
+  const [loading,setLoading]=useState(true);
+  useEffect(()=>{ load('scrap').then(d=>{ setRecords(d); setLoading(false); }); },[]);
   const [modal,setModal]=useState(null);
   const [search,setSearch]=useState("");
   const [sort,setSort]=useState({col:"soldDate",dir:"desc"});
@@ -2731,7 +3065,7 @@ function ScrapPage() {
     setModal(null);
   };
   const del = async id=>{
-    await deleteRecord('issued', id);
+    await deleteRecord('scrap', id);
     setRecords(r=>r.filter(x=>x.id!==id));
     toast("Record deleted", "success");
   };
@@ -2756,11 +3090,14 @@ function ScrapPage() {
       <LifecycleHint/>
       <div className="table-wrapper">
         <div style={{padding:"12px 16px",borderBottom:"1px solid var(--border)"}}>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search part name, code, vendor, GP, bill..."
-            className="search-input" style={{width:"100%",maxWidth:400,padding:"8px 12px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
+          <div style={{position:"relative",width:"100%",maxWidth:400}}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search part name, code, vendor, GP, bill..."
+              className="search-input" style={{width:"100%",padding:"8px 12px 8px 34px",borderRadius:8,fontSize:13.5,fontFamily:"var(--font-body)",boxSizing:"border-box"}}/>
+          </div>
         </div>
-        {records.length===0&&<Skeleton/>}
-        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:records.length===0?"none":"block"}} className="scrollbar-dark">
+        {loading&&<Skeleton/>}
+        <div style={{overflowX:"auto",overflowY:"auto",maxHeight:"65vh",display:loading?"none":"block"}} className="scrollbar-dark">
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead>
               <tr>
@@ -2770,9 +3107,9 @@ function ScrapPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length===0&&<tr><td colSpan={cols.length+2} style={{padding:32,textAlign:"center",color:"var(--text-muted)",fontSize:13}}>No scrap records found.</td></tr>}
+              {filtered.length===0&&<tr><td colSpan={cols.length+2}><div style={{padding:"48px 32px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:12}}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg><div style={{fontSize:14,fontWeight:700,color:"var(--text-secondary)"}}>No scrap records found</div><div style={{fontSize:12,color:"var(--text-muted)",maxWidth:260,lineHeight:1.6}}>Try adjusting your search or add a new scrap entry.</div></div></td></tr>}
               {filtered.map((r,i)=>(
-                <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+                <tr key={r.id} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";e.currentTarget.style.boxShadow="inset 3px 0 0 var(--accent)";}} onMouseLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.boxShadow="";}} style={{transition:"background 0.15s, box-shadow 0.15s"}}>
                   <SnoTd>{i+1}</SnoTd>
                   <Td style={{color:"var(--text-primary)",fontWeight:600}}><LifecycleName name={r.partName} id={r.partId} onOpen={setLifecycle}/></Td>
                   <Td><code style={{fontSize:11.5,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)",border:"1px solid rgba(34,211,238,0.2)"}}>{r.code||"—"}</code></Td>
@@ -2818,7 +3155,8 @@ function ScrapPage() {
 function ScrapModal({data,mode,qtyUnits,onSave,onClose}) {
   const [form,setForm]=useState(data);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const submit=e=>{e.preventDefault();onSave(form);};
+  const [saving,setSaving]=useState(false);
+const submit=async e=>{e.preventDefault();setSaving(true);await onSave(form);setSaving(false);};
   return (
     <form onSubmit={submit}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
@@ -2848,7 +3186,10 @@ function ScrapModal({data,mode,qtyUnits,onSave,onClose}) {
       </div>
       <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:16}}>
         <button type="button" onClick={onClose} className="action-btn-secondary">Cancel</button>
-        <button type="submit" className="action-btn-primary">Save Record</button>
+        <button type="submit" className="action-btn-primary" disabled={saving} style={{opacity:saving?0.8:1,display:"flex",alignItems:"center",gap:8}}>
+  {saving&&<div style={{width:14,height:14,border:"2px solid rgba(13,15,20,0.3)",borderTop:"2px solid #0d0f14",borderRadius:"50%",animation:"spin 0.7s linear infinite"}}/>}
+  {saving?"Saving...":"Save Record"}
+</button>
       </div>
     </form>
   );
@@ -2887,7 +3228,7 @@ function PartLifecycleModal({partName, partId, onClose}) {
     ...movements.map(r=>({...r, _type:"maintenance", _date: r.issueDate||r.issuedDate||""})),
     ...repair.map(r=>({...r, _type:"repair", _date: r.dateSent||""})),
     ...scrap.map(r=>({...r, _type:"scrap", _date: r.soldDate||""})),
-  ].sort((a,b)=> a._date > b._date ? 1 : -1);
+  ].sort((a,b)=> a._date > b._date ? -1 : 1);
 
   const TYPE_CFG = {
     issued:      {label:"Issued",      color:"#4f8ef7", bg:"rgba(79,142,247,0.12)",  border:"rgba(79,142,247,0.3)",  icon:"clipboard"},
@@ -2964,6 +3305,8 @@ function PartLifecycleModal({partName, partId, onClose}) {
             {/* Vertical line */}
             <div style={{position:"absolute",left:19,top:0,bottom:0,width:2,background:"var(--border)",borderRadius:2}}/>
 
+            
+
             {timeline.map((r,i)=>{
               const cfg = TYPE_CFG[r._type];
               return (
@@ -2988,6 +3331,8 @@ function PartLifecycleModal({partName, partId, onClose}) {
                 </div>
               );
             })}
+
+            
           </div>
         </div>
       )}
@@ -3064,7 +3409,7 @@ function SearchPage({initialQuery=""}) {
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead><tr>{["Vehicle","Part Name","Part ID","Final Status","Action Taken","Date","Actions"].map(h=><Th key={h}>{h}</Th>)}</tr></thead>
             <tbody>{results.movements.map(r=>(
-              <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+              <tr key={r.id} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";e.currentTarget.style.boxShadow="inset 3px 0 0 var(--accent)";}} onMouseLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.boxShadow="";}} style={{transition:"background 0.15s, box-shadow 0.15s"}}>
                 <Td style={{color:"var(--accent)",fontWeight:700}}>{r.vehicleNumber||"—"}</Td>
                 <Td style={{color:"var(--text-primary)",fontWeight:500}}>{r.partName||"—"}</Td>
                 <Td><code style={{fontSize:12,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)"}}>{r.partId||"—"}</code></Td>
@@ -3086,7 +3431,7 @@ function SearchPage({initialQuery=""}) {
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead><tr>{["Vehicle","Item Name","Code","GP Number","Issued By","Date","Actions"].map(h=><Th key={h}>{h}</Th>)}</tr></thead>
             <tbody>{results.issued.map(r=>(
-              <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+              <tr key={r.id} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";e.currentTarget.style.boxShadow="inset 3px 0 0 var(--accent)";}} onMouseLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.boxShadow="";}} style={{transition:"background 0.15s, box-shadow 0.15s"}}>
                 <Td style={{color:"var(--accent)",fontWeight:700}}>{r.vehicleNumber||"—"}</Td>
                 <Td style={{color:"var(--text-primary)"}}>{r.itemName||"—"}</Td>
                 <Td><code style={{fontSize:12,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)"}}>{r.itemCode||"—"}</code></Td>
@@ -3108,7 +3453,7 @@ function SearchPage({initialQuery=""}) {
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead><tr>{["Vehicle","Part Name","Part ID","Vendor","OGP #","Date Sent","Status","Actions"].map(h=><Th key={h}>{h}</Th>)}</tr></thead>
             <tbody>{results.repair.map(r=>(
-              <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+              <tr key={r.id} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";e.currentTarget.style.boxShadow="inset 3px 0 0 var(--accent)";}} onMouseLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.boxShadow="";}} style={{transition:"background 0.15s, box-shadow 0.15s"}}>
                 <Td style={{color:"var(--accent)",fontWeight:700}}>{r.vehicleNo||"—"}</Td>
                 <Td style={{color:"var(--text-primary)"}}>{r.partName||"—"}</Td>
                 <Td><code style={{fontSize:12,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)"}}>{r.partId||"—"}</code></Td>
@@ -3131,7 +3476,7 @@ function SearchPage({initialQuery=""}) {
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead><tr>{["Vendor","Part Name","Code","Part ID","Date","Amount","Purchased For"].map(h=><Th key={h}>{h}</Th>)}</tr></thead>
             <tbody>{results.purchase.map(r=>(
-              <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+              <tr key={r.id} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";e.currentTarget.style.boxShadow="inset 3px 0 0 var(--accent)";}} onMouseLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.boxShadow="";}} style={{transition:"background 0.15s, box-shadow 0.15s"}}>
                 <Td style={{color:"var(--text-primary)",fontWeight:600}}>{r.vendorName||"—"}</Td>
                 <Td>{r.partName||"—"}</Td>
                 <Td><code style={{fontSize:12,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)"}}>{r.code||"—"}</code></Td>
@@ -3150,7 +3495,7 @@ function SearchPage({initialQuery=""}) {
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead><tr>{["Part Name","Code","Part ID","Vendor","Sold Date","Amount"].map(h=><Th key={h}>{h}</Th>)}</tr></thead>
             <tbody>{results.scrap.map(r=>(
-              <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background="var(--bg-elevated)"} onMouseLeave={e=>e.currentTarget.style.background=""} style={{transition:"background 0.1s"}}>
+              <tr key={r.id} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.045)";e.currentTarget.style.boxShadow="inset 3px 0 0 var(--accent)";}} onMouseLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.boxShadow="";}} style={{transition:"background 0.15s, box-shadow 0.15s"}}>
                 <Td style={{color:"var(--text-primary)",fontWeight:600}}>{r.partName||"—"}</Td>
                 <Td><code style={{fontSize:12,background:"var(--bg-elevated)",padding:"2px 7px",borderRadius:5,color:"var(--cyan)"}}>{r.code||"—"}</code></Td>
                 <Td style={{color:"var(--text-secondary)"}}>{r.partId||"—"}</Td>
@@ -3193,6 +3538,7 @@ function ScrapBillPage() {
   useEffect(() => {
     supabase.from('billconfig').select('*').eq('company', company).single().then(({data}) => {
       if(data) setBillNo(data.data.billNo||1);
+      else supabase.from('billconfig').upsert({id:`billconfig-${company}`, data:{billNo:1}, company}).then(()=>{});
     });
   }, []);
 
@@ -3202,7 +3548,7 @@ function ScrapBillPage() {
 
   const incrementBillNo = async () => {
     const next = billNo + 1;
-    await supabase.from('billconfig').update({data: {billNo: next}}).eq('company', company);
+    await supabase.from('billconfig').upsert({id:`billconfig-${company}`, data:{billNo: next}, company});
     setBillNo(next);
   };
 
@@ -3254,7 +3600,7 @@ function ScrapBillPage() {
     </head>
     <body>
       <div style="margin-top:20px;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:4px;">
-        <img src="${company==="aysis" ? "./Aysis International Waste Management.png" : "./Pak altas.png"}" alt="logo" style="width:70px;height:70px;object-fit:contain;" onerror="this.style.display='none'"/>
+        <img src="${company==="aysis" ? "./Aysis International Waste Management.png" : "./Pak Altas white.png"}" alt="logo" style="width:70px;height:70px;object-fit:contain;" onerror="this.style.display='none'"/>
         <div class="company-name" style="margin-top:0;">${companyName}</div>
       </div>
       <div style="text-align:center;font-size:14px;font-weight:800;letter-spacing:0.1em;margin-bottom:16px;">SCRAP BILL / CASH MEMO</div>
@@ -3539,7 +3885,7 @@ function VehicleMaintenanceForm() {
       @media print{body{padding:12px;}*{page-break-inside:avoid;}}
     </style></head><body>
       <div class="header-logo">
-        <img src="${company==="aysis"?"./Aysis International Waste Management.png":"./Pak altas.png"}" style="width:60px;height:60px;object-fit:contain;" onerror="this.style.display='none'"/>
+        <img src="${company==="aysis"?"./Aysis International Waste Management.png":"./Pak Altas white.png"}" style="width:60px;height:60px;object-fit:contain;" onerror="this.style.display='none'"/>
         <div>
           <div class="title">${companyName}</div>
           <div class="title" style="font-size:13px;">VEHICLE MAINTENANCE FORM</div>
@@ -3553,8 +3899,6 @@ function VehicleMaintenanceForm() {
         <div class="field"><label>Driver Name:</label><span>${driverName}</span></div>
         <div class="field"><label>Item Name:</label><span>${itemName}</span></div>
         <div class="field"><label>Mechanic Name:</label><span>${mechanicName}</span></div>
-      </div>
-      ${workshopIncharge}</div></div>
       </div>
       <div class="section-title">Issued & Replaced Vehicle Parts Details (to be filled by Stores Dept):</div>
       <table>
@@ -3821,7 +4165,7 @@ function VehicleMaintenanceRequestForm() {
       @media print{body{padding:16px;}}
     </style></head><body>
       <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:6px;">
-        <img src="${company==="aysis"?"./Aysis International Waste Management.png":"./Pak altas.png"}" style="width:90px;height:90px;object-fit:contain;" onerror="this.style.display='none'"/>
+        <img src="${company==="aysis"?"./Aysis International Waste Management.png":"./Pak Altas white.png"}" style="width:90px;height:90px;object-fit:contain;" onerror="this.style.display='none'"/>
         <div class="company">${companyName}</div>
       </div>
       <div class="form-title">VEHICLE MAINTENANCE REQUEST FORM</div>
